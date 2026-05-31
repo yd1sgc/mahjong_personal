@@ -19,6 +19,13 @@ st.markdown("""
     font-weight: bold;
     border-radius: 10px;
 }
+/* R✓（disabled primary）を赤いまま表示 */
+[data-testid="baseButton-primary"]:disabled {
+    background-color: #FF4B4B !important;
+    color: white !important;
+    border-color: #FF4B4B !important;
+    opacity: 0.75 !important;
+}
 /* 列コンテナ: 折り返しなし・ギャップ縮小 */
 [data-testid="stHorizontalBlock"],
 [data-testid="stColumns"] {
@@ -26,12 +33,13 @@ st.markdown("""
     align-items: stretch !important;
     gap: 0.5rem !important;
 }
-/* 列自体が縮めるように */
+/* 列自体: 縮小可能に */
 [data-testid="column"],
 [data-testid="stColumn"] {
     min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
-/* スマホ: パディング削減 + 列を均等幅に強制 */
+/* スマホ: パディング削減 */
 @media (max-width: 640px) {
     .block-container {
         padding-left: 0.5rem !important;
@@ -44,6 +52,11 @@ st.markdown("""
     [data-testid="column"],
     [data-testid="stColumn"] {
         min-width: 0 !important;
+        flex-shrink: 1 !important;
+    }
+    /* 2列グリッドのみ均等幅に強制（3列以上は比率を維持） */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(2):last-child) > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(2):last-child) > [data-testid="column"] {
         flex: 1 1 0% !important;
     }
 }
@@ -360,39 +373,36 @@ def show_game():
             tags.append("R")
         tag_str = " ".join(tags)
 
-        if in_diff_mode:
-            # 点差表示: 名前ボタン + 赤青の差分 + 副 + R
-            col_p, col_d, col_f, col_r = st.columns([3, 2, 1, 1])
-            diff = score - scores[diff_target]
-            color = "#1D4ED8" if diff >= 0 else "#DC2626"
-            sign = "+" if diff >= 0 else ""
+        col_p, col_f, col_r = st.columns([4, 1, 1])
 
-            with col_p:
+        with col_p:
+            if in_diff_mode:
+                # 点差をプレイヤー列内に色付きで表示（非ボタン）
+                diff = score - scores[diff_target]
+                color = "#1D4ED8" if diff >= 0 else "#DC2626"
+                sign = "+" if diff >= 0 else ""
                 name_label = f"{tag_str + ' ' if tag_str else ''}{p}"
-                if st.button(name_label, key=f"p_{p}", use_container_width=True):
-                    st.session_state.diff_target = p
-                    st.rerun()
-            with col_d:
                 st.markdown(
-                    f"<div style='color:{color}; font-size:20px; font-weight:bold;"
-                    f" text-align:center; line-height:56px;'>{sign}{diff:,}</div>",
+                    f"<div style='border:1px solid #555; border-radius:10px; padding:4px 8px;"
+                    f" text-align:center; min-height:44px; display:flex; flex-direction:column;"
+                    f" justify-content:center; gap:1px;'>"
+                    f"<div style='font-size:13px; color:#ccc;'>{name_label}</div>"
+                    f"<div style='font-size:18px; font-weight:bold; color:{color};'>{sign}{diff:,}</div>"
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
-        else:
-            # 通常表示: 名前+点数ボタン + 副 + R
-            col_p, col_f, col_r = st.columns([4, 1, 1])
-            btn_label = f"{tag_str + ' ' if tag_str else ''}{p}  {score:,}"
-
-            with col_p:
+            else:
+                btn_label = f"{tag_str + ' ' if tag_str else ''}{p}  {score:,}"
                 if st.button(btn_label, key=f"p_{p}", use_container_width=True):
                     st.session_state.diff_target = None if is_diff_base else p
                     st.rerun()
 
-        # 副ボタン
+        # 副ボタン（リーチ中は押せない）
         with col_f:
             label_f = "副✓" if is_furo else "副"
             if st.button(label_f, key=f"f_{p}",
                          type="primary" if is_furo else "secondary",
+                         disabled=is_riichi,
                          use_container_width=True):
                 if is_furo:
                     st.session_state.furo_declared.remove(p)
@@ -400,17 +410,17 @@ def show_game():
                     st.session_state.furo_declared.append(p)
                 st.rerun()
 
-        # リーチボタン
+        # リーチボタン（フウロ中・点数不足は押せない）
         with col_r:
             if is_riichi:
                 st.button("R✓", key=f"r_{p}", type="primary",
                           disabled=True, use_container_width=True)
-            elif score >= 1000:
-                if st.button("R", key=f"r_{p}", use_container_width=True):
+            else:
+                can_riichi = score >= 1000 and not is_furo
+                if st.button("R", key=f"r_{p}",
+                             disabled=not can_riichi, use_container_width=True):
                     declare_riichi(p)
                     st.rerun()
-            else:
-                st.button("R", key=f"r_{p}", disabled=True, use_container_width=True)
 
     st.divider()
 
