@@ -439,7 +439,7 @@ def show_game():
                 st.button("立\n✓", key=f"r_{p}", type="primary",
                           use_container_width=True)
             else:
-                can_riichi = score >= 1000 and not is_furo
+                can_riichi = not is_furo
                 if st.button("立\n　", key=f"r_{p}",
                              disabled=not can_riichi, use_container_width=True):
                     declare_riichi(p)
