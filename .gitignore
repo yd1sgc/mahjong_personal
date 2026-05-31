@@ -7,3 +7,7 @@ __pycache__/
 *.db
 *.csv
 *.bak
+
+# 旧バージョン（app.py に一本化）
+main_app.py
+main_app2.py
