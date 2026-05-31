@@ -1,0 +1,9 @@
+# Python キャッシュ
+__pycache__/
+*.pyc
+*.pyo
+
+# 個人データ（記録しない）
+*.db
+*.csv
+*.bak
