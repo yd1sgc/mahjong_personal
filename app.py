@@ -701,7 +701,14 @@ def show_edit_history():
 def show_endgame():
     st.title("終局")
     players = st.session_state.players
-    scores = st.session_state.scores
+    scores = dict(st.session_state.scores)
+
+    riichi_bonus = st.session_state.riichi_stick * 1000
+    if riichi_bonus > 0:
+        top_p = max(players, key=lambda p: scores[p])
+        scores[top_p] += riichi_bonus
+        st.info(f"供託 {st.session_state.riichi_stick}本（{riichi_bonus:,}点）を {top_p} に加算します")
+
     sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
 
     st.subheader("最終結果")
@@ -713,13 +720,21 @@ def show_endgame():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("記録して終了", type="primary", use_container_width=True):
+            st.session_state.scores = scores
+            st.session_state.riichi_stick = 0
             date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             game_id = db.save_game(date_str, scores, players)
             for r in st.session_state.round_history:
                 db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
                               r["score"], r["furo"], r["riichi"])
-            st.success("記録しました！")
+            result_rows = [
+                {"rank": i + 1, "name": p, "score": scores[p],
+                 "pt": calc.calc_special_point(scores[p], i + 1)}
+                for i, p in enumerate(sorted_p)
+            ]
+            st.session_state.last_result = {"game_id": game_id, "date": date_str, "rows": result_rows}
             reset_game()
+            st.session_state.view = "result"
             st.rerun()
     with c2:
         if st.button("記録せず終了", use_container_width=True):
@@ -728,6 +743,22 @@ def show_endgame():
 
     if st.button("戻る（対局続行）", use_container_width=True):
         st.session_state.input_mode = "normal"
+        st.rerun()
+
+
+# ── 画面: 対局結果確認 ────────────────────────────────────
+
+def show_result():
+    result = st.session_state.get("last_result", {})
+    st.title("対局結果")
+    if result:
+        st.caption(f"Game #{result['game_id']}　{result['date']}")
+        st.divider()
+        for row in result["rows"]:
+            st.write(f"{row['rank']}位: **{row['name']}**　{row['score']:,}点　({row['pt']:+.1f}pt)")
+    st.divider()
+    if st.button("閉じる", type="primary", use_container_width=True):
+        st.session_state.view = "setup"
         st.rerun()
 
 
@@ -767,6 +798,8 @@ mode = st.session_state.input_mode
 
 if view == "stats":
     show_stats()
+elif view == "result":
+    show_result()
 elif not st.session_state.game_active:
     show_setup()
 elif mode == "win":

@@ -1,7 +1,8 @@
 import sqlite3
+import os
 import pandas as pd
 
-DB_PATH = 'mahjong_v3_complete.db'
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mahjong_v3_complete.db')
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

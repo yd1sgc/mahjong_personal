@@ -1,5 +1,4 @@
 import pandas as pd
-import streamlit as st
 import math
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -28,10 +27,6 @@ ROUND_INTEGER = False
 
 # ==========================================
 
-# メンバー設定 (新規対局の選択肢用)
-MEMBERS = ["リョウト", "ユウダイ", "マサキ", "クノ", 
-    "ｵｯﾁｬﾝ", "フルタ", "カツトシ", "ルイ", 
-    "シュン", "キド", "さ", "し", "す", "せ", "そ"]
 
 def calculate_score(han, fu, is_dealer, is_tsumo):
     """ 翻数・符数から点数を計算 """
@@ -72,7 +67,6 @@ def calc_special_point(score, rank):
         # 小数点第1位まで
         return round(total, 1)
 
-@st.cache_data
 def analyze_stats(df_games, df_rounds):
     """ 詳細成績計算 """
     if df_games.empty: return pd.DataFrame()
