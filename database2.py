@@ -144,3 +144,58 @@ def save_all_rounds(df):
     conn = sqlite3.connect(DB_PATH)
     df.to_sql('rounds', conn, if_exists='replace', index=False)
     conn.close()
+
+def update_game_scores(game_id, scores_dict):
+    sorted_p = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
+    name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=?", (game_id,))
+    row = c.fetchone()
+    if row:
+        for slot in range(1, 5):
+            name = row[slot - 1]
+            if name in scores_dict:
+                c.execute(
+                    f"UPDATE games SET p{slot}_score=?, p{slot}_rank=? WHERE game_id=?",
+                    (scores_dict[name], name_to_rank[name], game_id)
+                )
+    conn.commit()
+    conn.close()
+
+def delete_game(game_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM games WHERE game_id=?", (game_id,))
+    conn.execute("DELETE FROM rounds WHERE game_id=?", (game_id,))
+    conn.commit()
+    conn.close()
+
+def import_games_from_df(df):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    count = 0
+    for _, row in df.iterrows():
+        players = [
+            (str(row['p1_name']), int(row['p1_score'])),
+            (str(row['p2_name']), int(row['p2_score'])),
+            (str(row['p3_name']), int(row['p3_score'])),
+            (str(row['p4_name']), int(row['p4_score'])),
+        ]
+        sorted_p = sorted(players, key=lambda x: x[1], reverse=True)
+        name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
+        c.execute('''INSERT INTO games (date,
+            p1_name, p1_score, p1_rank,
+            p2_name, p2_score, p2_rank,
+            p3_name, p3_score, p3_rank,
+            p4_name, p4_score, p4_rank
+        ) VALUES (?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
+            str(row['date']),
+            players[0][0], players[0][1], name_to_rank[players[0][0]],
+            players[1][0], players[1][1], name_to_rank[players[1][0]],
+            players[2][0], players[2][1], name_to_rank[players[2][0]],
+            players[3][0], players[3][1], name_to_rank[players[3][0]],
+        ))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count

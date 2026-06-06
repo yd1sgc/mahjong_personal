@@ -68,100 +68,128 @@ def calc_special_point(score, rank):
         return round(total, 1)
 
 def analyze_stats(df_games, df_rounds):
-    """ 詳細成績計算 """
-    if df_games.empty: return pd.DataFrame()
+    """成績計算。(ゲーム集計DF, ラウンド集計DF, 詳細記録試合数) を返す"""
+    if df_games.empty:
+        return pd.DataFrame(), pd.DataFrame(), 0
 
-    # データ内に存在する全プレイヤー名を自動取得
     all_players = pd.unique(df_games[['p1_name', 'p2_name', 'p3_name', 'p4_name']].values.ravel('K'))
     valid_players = [p for p in all_players if pd.notna(p) and str(p).strip() != ""]
 
-    stats = {name: {
-        "試合数": 0, "総合pt": 0.0, "順位合計": 0, "素点合計": 0,
+    # ── 1. ゲームレベル集計（全試合対象）──────────────────────
+    game_stats = {name: {
+        "試合数": 0, "総合pt": 0.0, "順位合計": 0,
         "1着": 0, "2着": 0, "3着": 0, "4着": 0,
-        "局数": 0, "和了": 0, "放銃": 0, "副露": 0, 
-        "リーチ": 0, "リーチ後和了": 0,
-        "和了点": 0, "放銃点": 0
     } for name in valid_players}
 
-    # 1. 試合データの集計
     for _, row in df_games.iterrows():
         for i in range(1, 5):
-            if f'p{i}_name' not in row: continue
-            
-            name = row[f'p{i}_name']
-            if name in stats:
-                score = row.get(f'p{i}_score', 25000)
-                rank = row.get(f'p{i}_rank', 0)
-                
-                stats[name]["試合数"] += 1
-                stats[name]["総合pt"] += calc_special_point(score, rank)
-                
-                # 素点計算: (持ち点 - 返し点+5000) / 1000
-                # ここで上で定義した RETURN_POINT を使います
-                stats[name]["素点合計"] += (score - RETURN_POINT+5000) / 1000
-                
-                if rank > 0:
-                    stats[name]["順位合計"] += rank
-                    stats[name][f"{rank}着"] += 1
+            name = row.get(f'p{i}_name')
+            if name not in game_stats:
+                continue
+            score = row.get(f'p{i}_score', 25000)
+            rank = row.get(f'p{i}_rank', 0)
+            game_stats[name]["試合数"] += 1
+            game_stats[name]["総合pt"] += calc_special_point(score, rank)
+            if rank > 0:
+                game_stats[name]["順位合計"] += rank
+                game_stats[name][f"{rank}着"] += 1
 
-    # 2. 局データの集計
-    if not df_rounds.empty:
-        has_riichi = 'riichi_names' in df_rounds.columns
-        target_ids = df_games['game_id'].unique()
-        df_r = df_rounds[df_rounds['game_id'].isin(target_ids)]
-        
-        for _, r in df_r.iterrows():
-            winner = r.get('winner', '')
-            
-            riichi_players = []
-            if has_riichi:
-                r_names = r.get('riichi_names', '')
-                if pd.notna(r_names) and isinstance(r_names, str):
-                    riichi_players = r_names.split(',')
-
-            for m in stats.keys():
-                stats[m]["局数"] += 1
-                f_names = r.get('furo_names', '')
-                if pd.notna(f_names) and isinstance(f_names, str) and m in f_names:
-                    stats[m]["副露"] += 1
-                
-                if m in riichi_players:
-                    stats[m]["リーチ"] += 1
-                    if m == winner:
-                        stats[m]["リーチ後和了"] += 1
-            
-            if winner in stats:
-                stats[winner]["和了"] += 1
-                stats[winner]["和了点"] += r.get('score', 0)
-                
-            loser = r.get('loser', '')
-            if loser in stats:
-                stats[loser]["放銃"] += 1
-                stats[loser]["放銃点"] += r.get('score', 0)
-
-    # 3. 結果リスト作成
-    data = []
-    for n, d in stats.items():
-        g, k = d["試合数"], d["局数"]
-        r_count = d["リーチ"]
-        if g == 0: continue
-        
-        data.append({
+    game_data = []
+    for n, d in game_stats.items():
+        g = d["試合数"]
+        if g == 0:
+            continue
+        game_data.append({
             "名前": n,
             "試合数": g,
-            "総合pt": d["総合pt"],
-            "素点": d["素点合計"],
-            "平均順位": d["順位合計"] / g,
-            "連対率": (d["1着"] + d["2着"]) / g * 100,
-            "ラス回避率": (d["1着"] + d["2着"] + d["3着"]) / g * 100,
-            "和了率": (d["和了"] / k * 100) if k else 0,
-            "放銃率": (d["放銃"] / k * 100) if k else 0,
-            "副露率": (d["副露"] / k * 100) if k else 0,
-            "リーチ率": (d["リーチ"] / k * 100) if k else 0,
-            "リーチ成功率": (d["リーチ後和了"] / r_count * 100) if r_count else 0,
-            "平均和了": (d["和了点"] / d["和了"]) if d["和了"] else 0,
-            "平均放銃": (d["放銃点"] / d["放銃"]) if d["放銃"] else 0,
-            "1着率": d["1着"]/g*100, "2着率": d["2着"]/g*100, 
-            "3着率": d["3着"]/g*100, "4着率": d["4着"]/g*100
+            "総合pt": round(d["総合pt"], 1),
+            "平均順位": round(d["順位合計"] / g, 2),
+            "連対率": round((d["1着"] + d["2着"]) / g * 100, 1),
+            "ラス回避率": round((d["1着"] + d["2着"] + d["3着"]) / g * 100, 1),
+            "1着率": round(d["1着"] / g * 100, 1),
+            "2着率": round(d["2着"] / g * 100, 1),
+            "3着率": round(d["3着"] / g * 100, 1),
+            "4着率": round(d["4着"] / g * 100, 1),
         })
-    return pd.DataFrame(data)
+    df_game_stats = pd.DataFrame(game_data)
+
+    # ── 2. ラウンドレベル集計（詳細記録あり試合のみ）──────────
+    if df_rounds.empty:
+        return df_game_stats, pd.DataFrame(), 0
+
+    round_game_ids = set(df_rounds['game_id'].unique())
+    df_games_with_rounds = df_games[df_games['game_id'].isin(round_game_ids)]
+    n_round_games = len(df_games_with_rounds)
+
+    if n_round_games == 0:
+        return df_game_stats, pd.DataFrame(), 0
+
+    # game_id → 参加プレイヤーセット のマップ（局数の誤計上を防ぐ）
+    game_players_map = {}
+    for _, game_row in df_games_with_rounds.iterrows():
+        gid = game_row['game_id']
+        game_players_map[gid] = {
+            str(game_row[f'p{i}_name']).strip()
+            for i in range(1, 5)
+            if pd.notna(game_row.get(f'p{i}_name')) and str(game_row[f'p{i}_name']).strip()
+        }
+
+    round_stats = {name: {
+        "局数": 0, "和了": 0, "放銃": 0, "副露": 0,
+        "リーチ": 0, "リーチ後和了": 0,
+        "和了点": 0, "放銃点": 0,
+    } for name in valid_players}
+
+    has_riichi = 'riichi_names' in df_rounds.columns
+    df_r = df_rounds[df_rounds['game_id'].isin(round_game_ids)]
+
+    for _, r in df_r.iterrows():
+        game_id = r['game_id']
+        game_players = game_players_map.get(game_id, set())
+        winner = r.get('winner', '')
+
+        riichi_players = []
+        if has_riichi:
+            r_names = r.get('riichi_names', '')
+            if pd.notna(r_names) and isinstance(r_names, str):
+                riichi_players = [x for x in r_names.split(',') if x]
+
+        for m in round_stats.keys():
+            if m not in game_players:
+                continue
+            round_stats[m]["局数"] += 1
+            f_names = r.get('furo_names', '')
+            if pd.notna(f_names) and isinstance(f_names, str) and m in f_names:
+                round_stats[m]["副露"] += 1
+            if m in riichi_players:
+                round_stats[m]["リーチ"] += 1
+                if m == winner:
+                    round_stats[m]["リーチ後和了"] += 1
+
+        if winner in round_stats:
+            round_stats[winner]["和了"] += 1
+            round_stats[winner]["和了点"] += r.get('score', 0)
+        loser = r.get('loser', '')
+        if loser in round_stats:
+            round_stats[loser]["放銃"] += 1
+            round_stats[loser]["放銃点"] += r.get('score', 0)
+
+    round_data = []
+    for n, d in round_stats.items():
+        k = d["局数"]
+        if k == 0:
+            continue
+        r_count = d["リーチ"]
+        round_data.append({
+            "名前": n,
+            "和了率": round(d["和了"] / k * 100, 1),
+            "放銃率": round(d["放銃"] / k * 100, 1),
+            "副露率": round(d["副露"] / k * 100, 1),
+            "リーチ率": round(d["リーチ"] / k * 100, 1),
+            "リーチ成功率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0,
+            "平均和了": round(d["和了点"] / d["和了"]) if d["和了"] else 0,
+            "平均放銃": round(d["放銃点"] / d["放銃"]) if d["放銃"] else 0,
+        })
+    df_round_stats = pd.DataFrame(round_data)
+
+    return df_game_stats, df_round_stats, n_round_games

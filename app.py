@@ -151,6 +151,7 @@ def init_session():
         "undo_stack": [],
         "round_history": [],
         "selected_players": [],
+        "game_mode": "detail",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -350,20 +351,78 @@ def show_setup():
 
     st.divider()
 
-    if len(selected) == 4:
-        if st.button("対局スタート", type="primary", use_container_width=True):
+    ready = len(selected) == 4
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("詳細モード", type="primary",
+                     disabled=not ready, use_container_width=True):
             st.session_state.players = list(selected)
             st.session_state.scores = {p: INIT_SCORE for p in selected}
             st.session_state.game_active = True
+            st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
             st.rerun()
-    else:
-        st.button("対局スタート", type="primary", use_container_width=True,
-                  disabled=True)
+    with c2:
+        if st.button("結果のみ", disabled=not ready, use_container_width=True):
+            st.session_state.players = list(selected)
+            st.session_state.game_mode = "simple"
+            st.session_state.selected_players = []
+            st.session_state.view = "simple_input"
+            st.rerun()
 
-    if st.button("成績を見る", use_container_width=True):
-        st.session_state.view = "stats"
+    c3, c4 = st.columns(2)
+    with c3:
+        if st.button("成績を見る", use_container_width=True):
+            st.session_state.view = "stats"
+            st.rerun()
+    with c4:
+        if st.button("データ管理", use_container_width=True):
+            st.session_state.view = "data_manage"
+            st.rerun()
+
+
+# ── 画面: 結果のみ入力 ───────────────────────────────────
+
+def show_simple_input():
+    st.title("スコア入力")
+    players = st.session_state.get("players", [])
+    if not players:
+        st.session_state.view = "setup"
         st.rerun()
+        return
+
+    st.caption("4人の合計が100,000点になるよう入力してください")
+
+    scores = {}
+    for p in players:
+        scores[p] = st.number_input(p, value=25000, step=100, key=f"simple_{p}")
+
+    total = sum(scores.values())
+    remainder = 100000 - total
+    st.caption(f"合計: {total:,}点　　残り: {remainder:,}点")
+
+    ok = (total == 100000)
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("記録する", type="primary", disabled=not ok,
+                     use_container_width=True):
+            sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
+            date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            game_id = db.save_game(date_str, scores, players)
+            result_rows = [
+                {"rank": i + 1, "name": p, "score": scores[p],
+                 "pt": calc.calc_special_point(scores[p], i + 1)}
+                for i, p in enumerate(sorted_p)
+            ]
+            st.session_state.last_result = {
+                "game_id": game_id, "date": date_str, "rows": result_rows
+            }
+            st.session_state.view = "result"
+            st.rerun()
+    with c2:
+        if st.button("キャンセル", use_container_width=True):
+            st.session_state.view = "setup"
+            st.rerun()
 
 
 # ── 画面: 対局中メイン ────────────────────────────────────
@@ -766,25 +825,124 @@ def show_result():
 
 def show_stats():
     st.title("成績")
-    df_games = db.get_games_data()
+    df_all = db.get_games_data()
+
+    year_options = ["全期間"]
+    if not df_all.empty and 'date' in df_all.columns:
+        years = sorted(df_all['date'].dt.year.dropna().unique().astype(int), reverse=True)
+        year_options += [str(y) for y in years]
+    selected_year = st.selectbox("集計期間", year_options, key="stats_year")
+
+    df_games = db.get_games_data(year_filter=selected_year)
     df_rounds = db.get_rounds_data()
 
     if df_games.empty:
         st.info("記録がまだありません。対局を終局・記録すると反映されます。")
     else:
-        df_stats = calc.analyze_stats(df_games, df_rounds)
-        if not df_stats.empty:
-            show_cols = [c for c in [
-                "名前", "試合数", "平均順位", "総合pt",
-                "和了率", "放銃率", "リーチ率", "副露率", "連対率",
-            ] if c in df_stats.columns]
+        game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
+
+        if not game_stats.empty:
+            st.subheader("試合成績")
+            game_cols = ["名前", "試合数", "総合pt", "平均順位",
+                         "連対率", "ラス回避率", "1着率", "2着率", "3着率", "4着率"]
+            show_cols = [c for c in game_cols if c in game_stats.columns]
             st.dataframe(
-                df_stats[show_cols].sort_values("総合pt", ascending=False),
-                use_container_width=True,
+                game_stats[show_cols].sort_values("総合pt", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+
+        if not round_stats.empty:
+            st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
+            round_cols = ["名前", "和了率", "放銃率", "副露率", "リーチ率",
+                          "リーチ成功率", "平均和了", "平均放銃"]
+            show_cols = [c for c in round_cols if c in round_stats.columns]
+            st.dataframe(
+                round_stats[show_cols].sort_values("和了率", ascending=False),
+                use_container_width=True, hide_index=True,
             )
 
         st.subheader("対局履歴")
         st.dataframe(df_games.head(20), use_container_width=True)
+
+    if st.button("戻る", use_container_width=True):
+        st.session_state.view = "setup"
+        st.rerun()
+
+
+# ── 画面: データ管理 ──────────────────────────────────────
+
+def show_data_manage():
+    st.title("データ管理")
+    tab1, tab2, tab3 = st.tabs(["CSV取込", "スコア修正", "試合削除"])
+
+    with tab1:
+        st.subheader("CSVファイル取込")
+        st.caption("形式: game_id, date, p1_name, p1_score, p2_name, p2_score, p3_name, p3_score, p4_name, p4_score（ヘッダーなし）")
+        uploaded = st.file_uploader("CSVファイルを選択", type="csv", key="csv_upload")
+        if uploaded:
+            try:
+                df = pd.read_csv(uploaded, header=None,
+                                 names=["game_id", "date",
+                                        "p1_name", "p1_score",
+                                        "p2_name", "p2_score",
+                                        "p3_name", "p3_score",
+                                        "p4_name", "p4_score"])
+                st.dataframe(df.head(10), use_container_width=True)
+                st.caption(f"計 {len(df)}件（先頭10件表示）")
+                if st.button("取込む", type="primary", use_container_width=True):
+                    count = db.import_games_from_df(df)
+                    st.success(f"{count}件を取込みました。")
+            except Exception as e:
+                st.error(f"読み込みエラー: {e}")
+
+    with tab2:
+        st.subheader("スコア修正")
+        df_games = db.load_all_games()
+        if df_games.empty:
+            st.info("記録がありません。")
+        else:
+            def game_label(row):
+                return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
+
+            options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
+            sel_id = st.selectbox("試合を選択", list(options.keys()),
+                                  format_func=lambda x: options[x], key="edit_game_id")
+            row = df_games[df_games['game_id'] == sel_id].iloc[0]
+            new_scores = {}
+            for i in range(1, 5):
+                name = row[f'p{i}_name']
+                new_scores[name] = st.number_input(
+                    name, value=int(row[f'p{i}_score']), step=100, key=f"edit_score_{i}")
+            total = sum(new_scores.values())
+            ok = (total == 100000)
+            st.caption(f"合計: {total:,}点")
+            if st.button("保存", type="primary", disabled=not ok, use_container_width=True):
+                db.update_game_scores(sel_id, new_scores)
+                st.success("保存しました。")
+                st.rerun()
+
+    with tab3:
+        st.subheader("試合削除")
+        df_games = db.load_all_games()
+        if df_games.empty:
+            st.info("記録がありません。")
+        else:
+            def game_label(row):
+                return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
+
+            options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
+            sel_id = st.selectbox("削除する試合を選択", list(options.keys()),
+                                  format_func=lambda x: options[x], key="del_game_id")
+            row = df_games[df_games['game_id'] == sel_id].iloc[0]
+            for i in range(1, 5):
+                rank = int(row.get(f'p{i}_rank', i))
+                st.write(f"{rank}位: {row[f'p{i}_name']}  {int(row[f'p{i}_score']):,}点")
+            confirmed = st.checkbox("削除を確認する", key="del_confirm")
+            if st.button("この試合を削除", type="primary",
+                         disabled=not confirmed, use_container_width=True):
+                db.delete_game(int(sel_id))
+                st.success(f"Game #{sel_id} を削除しました。")
+                st.rerun()
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"
@@ -800,6 +958,10 @@ if view == "stats":
     show_stats()
 elif view == "result":
     show_result()
+elif view == "data_manage":
+    show_data_manage()
+elif view == "simple_input":
+    show_simple_input()
 elif not st.session_state.game_active:
     show_setup()
 elif mode == "win":
