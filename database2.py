@@ -45,22 +45,23 @@ def save_game(date_str, scores, players):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''INSERT INTO games (date, 
+    c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
+    next_id = c.fetchone()[0]
+    c.execute('''INSERT INTO games (game_id, date,
         p1_name, p1_score, p1_rank,
         p2_name, p2_score, p2_rank,
         p3_name, p3_score, p3_rank,
         p4_name, p4_score, p4_rank
-    ) VALUES (?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
-        date_str,
+    ) VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
+        next_id, date_str,
         sorted_p[0][0], sorted_p[0][1], 1,
         sorted_p[1][0], sorted_p[1][1], 2,
         sorted_p[2][0], sorted_p[2][1], 3,
         sorted_p[3][0], sorted_p[3][1], 4
     ))
-    gid = c.lastrowid
     conn.commit()
     conn.close()
-    return gid
+    return next_id
 
  # database.py の save_round 関数をこれに置き換え
 def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi):
@@ -99,7 +100,7 @@ def get_games_data(year_filter=None):
     conn.close()
     if df.empty: return df
 
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date'], format='mixed')
     df = df.sort_values('game_id')
     df['match_no'] = range(1, len(df) + 1)
     
@@ -173,6 +174,8 @@ def delete_game(game_id):
 def import_games_from_df(df):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
+    next_id = c.fetchone()[0]
     count = 0
     for _, row in df.iterrows():
         players = [
@@ -183,18 +186,19 @@ def import_games_from_df(df):
         ]
         sorted_p = sorted(players, key=lambda x: x[1], reverse=True)
         name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
-        c.execute('''INSERT INTO games (date,
+        c.execute('''INSERT INTO games (game_id, date,
             p1_name, p1_score, p1_rank,
             p2_name, p2_score, p2_rank,
             p3_name, p3_score, p3_rank,
             p4_name, p4_score, p4_rank
-        ) VALUES (?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
-            str(row['date']),
+        ) VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
+            next_id, str(row['date']),
             players[0][0], players[0][1], name_to_rank[players[0][0]],
             players[1][0], players[1][1], name_to_rank[players[1][0]],
             players[2][0], players[2][1], name_to_rank[players[2][0]],
             players[3][0], players[3][1], name_to_rank[players[3][0]],
         ))
+        next_id += 1
         count += 1
     conn.commit()
     conn.close()
