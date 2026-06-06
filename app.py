@@ -395,7 +395,7 @@ def show_simple_input():
 
     scores = {}
     for p in players:
-        scores[p] = st.number_input(p, value=25000, step=100, key=f"simple_{p}")
+        scores[p] = st.number_input(p, value=0, step=100, key=f"simple_{p}")
 
     total = sum(scores.values())
     remainder = 100000 - total
@@ -892,6 +892,7 @@ def show_data_manage():
                 if st.button("取込む", type="primary", use_container_width=True):
                     count = db.import_games_from_df(df)
                     st.success(f"{count}件を取込みました。")
+                    st.rerun()
             except Exception as e:
                 st.error(f"読み込みエラー: {e}")
 
