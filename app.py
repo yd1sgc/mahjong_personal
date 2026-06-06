@@ -407,7 +407,7 @@ def show_simple_input():
         if st.button("記録する", type="primary", disabled=not ok,
                      use_container_width=True):
             sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
-            date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            date_str = datetime.now().strftime("%Y-%m-%d")
             game_id = db.save_game(date_str, scores, players)
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
@@ -781,7 +781,7 @@ def show_endgame():
         if st.button("記録して終了", type="primary", use_container_width=True):
             st.session_state.scores = scores
             st.session_state.riichi_stick = 0
-            date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            date_str = datetime.now().strftime("%Y-%m-%d")
             game_id = db.save_game(date_str, scores, players)
             for r in st.session_state.round_history:
                 db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
@@ -838,31 +838,139 @@ def show_stats():
 
     if df_games.empty:
         st.info("記録がまだありません。対局を終局・記録すると反映されます。")
-    else:
-        game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
+        if st.button("戻る", use_container_width=True):
+            st.session_state.view = "setup"
+            st.rerun()
+        return
 
-        if not game_stats.empty:
-            st.subheader("試合成績")
-            game_cols = ["名前", "試合数", "総合pt", "平均順位",
-                         "連対率", "ラス回避率", "1着率", "2着率", "3着率", "4着率"]
-            show_cols = [c for c in game_cols if c in game_stats.columns]
-            st.dataframe(
-                game_stats[show_cols].sort_values("総合pt", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
+    # 実際に参加しているメンバー一覧
+    all_names = pd.unique(df_games[['p1_name','p2_name','p3_name','p4_name']].values.ravel('K'))
+    real_members = sorted([p for p in all_names if pd.notna(p) and str(p).strip()])
 
-        if not round_stats.empty:
-            st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
-            round_cols = ["名前", "和了率", "放銃率", "副露率", "リーチ率",
-                          "リーチ成功率", "平均和了", "平均放銃"]
-            show_cols = [c for c in round_cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("和了率", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
+    game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
-        st.subheader("対局履歴")
-        st.dataframe(df_games.head(20), use_container_width=True)
+    # ── 試合成績テーブル ──────────────────────────────────
+    if not game_stats.empty:
+        st.subheader("試合成績")
+        game_cols = ["名前", "試合数", "総合pt", "平均順位",
+                     "連対率", "ラス回避率", "1着率", "2着率", "3着率", "4着率"]
+        show_cols = [c for c in game_cols if c in game_stats.columns]
+        st.dataframe(
+            game_stats[show_cols].sort_values("総合pt", ascending=False),
+            use_container_width=True, hide_index=True,
+        )
+
+    # ── 詳細成績テーブル ──────────────────────────────────
+    if not round_stats.empty:
+        st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
+        round_cols = ["名前", "和了率", "放銃率", "副露率", "リーチ率",
+                      "リーチ成功率", "平均和了", "平均放銃"]
+        show_cols = [c for c in round_cols if c in round_stats.columns]
+        st.dataframe(
+            round_stats[show_cols].sort_values("和了率", ascending=False),
+            use_container_width=True, hide_index=True,
+        )
+
+    # ── 総合ポイント推移グラフ ────────────────────────────
+    st.divider()
+    st.subheader("総合ポイント推移")
+    df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
+    cumulative_scores = {name: [0] for name in real_members}
+    match_labels = ["G000"]
+    for i, row in df_sorted.iterrows():
+        match_labels.append(f"G{i+1:03}")
+        game_pts = {
+            row['p1_name']: calc.calc_special_point(row['p1_score'], row['p1_rank']),
+            row['p2_name']: calc.calc_special_point(row['p2_score'], row['p2_rank']),
+            row['p3_name']: calc.calc_special_point(row['p3_score'], row['p3_rank']),
+            row['p4_name']: calc.calc_special_point(row['p4_score'], row['p4_rank']),
+        }
+        for name in real_members:
+            cumulative_scores[name].append(cumulative_scores[name][-1] + game_pts.get(name, 0))
+    df_chart = pd.DataFrame(cumulative_scores, index=match_labels)
+
+    top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
+    default_sel = [m for m in top5 if m in real_members]
+    selected = st.multiselect("表示メンバー", options=real_members,
+                              default=default_sel, key="chart_sel")
+    if selected:
+        st.line_chart(df_chart[selected])
+
+    # ── レコード ──────────────────────────────────────────
+    st.divider()
+    st.subheader("レコード")
+    all_scores = []
+    for _, row in df_sorted.iterrows():
+        d = row['date']
+        date_str = d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
+        for i in range(1, 5):
+            all_scores.append([row[f'p{i}_name'], int(row[f'p{i}_score']), date_str])
+    df_scores_all = pd.DataFrame(all_scores, columns=['名前', '点数', '日付'])
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.caption("最高スコア Top5")
+        st.dataframe(df_scores_all.sort_values('点数', ascending=False).head(5).reset_index(drop=True),
+                     hide_index=True, use_container_width=True)
+        st.caption("最低スコア Top5")
+        st.dataframe(df_scores_all.sort_values('点数').head(5).reset_index(drop=True),
+                     hide_index=True, use_container_width=True)
+    with c2:
+        st.caption("連勝記録（2連勝以上）")
+        streak_data = []
+        for p in real_members:
+            my_games = df_sorted[
+                (df_sorted['p1_name']==p)|(df_sorted['p2_name']==p)|
+                (df_sorted['p3_name']==p)|(df_sorted['p4_name']==p)
+            ]
+            max_streak = cur = 0
+            for _, row in my_games.iterrows():
+                rank = next((row[f'p{i}_rank'] for i in range(1,5) if row[f'p{i}_name']==p), 0)
+                if rank == 1:
+                    cur += 1
+                    max_streak = max(max_streak, cur)
+                else:
+                    cur = 0
+            if max_streak >= 2:
+                streak_data.append({'名前': p, '最大連勝': max_streak})
+        if streak_data:
+            df_streak = pd.DataFrame(streak_data).sort_values('最大連勝', ascending=False).reset_index(drop=True)
+            st.dataframe(df_streak, hide_index=True, use_container_width=True)
+        else:
+            st.info("2連勝以上の記録はまだありません")
+
+    # ── 相性マトリクス ────────────────────────────────────
+    st.divider()
+    st.subheader("相性マトリクス（直接対決）")
+    st.caption("行が自分、列が相手。数値は同卓時のpt差合計。赤=得意、青=苦手。")
+    matrix_data = {p: {q: 0.0 for q in real_members} for p in real_members}
+    for _, row in df_sorted.iterrows():
+        p_res = {
+            row['p1_name']: calc.calc_special_point(row['p1_score'], row['p1_rank']),
+            row['p2_name']: calc.calc_special_point(row['p2_score'], row['p2_rank']),
+            row['p3_name']: calc.calc_special_point(row['p3_score'], row['p3_rank']),
+            row['p4_name']: calc.calc_special_point(row['p4_score'], row['p4_rank']),
+        }
+        players_in_game = [p for p in p_res if p in matrix_data]
+        for p_me in players_in_game:
+            for p_enemy in players_in_game:
+                if p_me != p_enemy:
+                    matrix_data[p_me][p_enemy] += p_res[p_me] - p_res[p_enemy]
+    df_matrix = pd.DataFrame(matrix_data).T
+    default_matrix = real_members[:5] if len(real_members) >= 5 else real_members
+    target = st.multiselect("分析対象", options=real_members,
+                            default=default_matrix, key="matrix_sel")
+    if target:
+        df_show_matrix = df_matrix.loc[target, target]
+        st.dataframe(
+            df_show_matrix.style.background_gradient(cmap='coolwarm_r', axis=None).format("{:+.1f}"),
+            use_container_width=True,
+        )
+
+    # ── 対局履歴 ──────────────────────────────────────────
+    st.divider()
+    st.subheader("対局履歴")
+    st.dataframe(df_games.head(20), use_container_width=True)
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"
