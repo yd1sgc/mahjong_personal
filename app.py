@@ -440,6 +440,7 @@ def show_simple_input():
             sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
             game_id = db.save_game(date_str, scores, players)
+            db.get_games_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1)}
@@ -885,6 +886,8 @@ def show_endgame():
                               r["score"], r["furo"], r["riichi"],
                               win_type=r.get("win_type", ""),
                               tenpai=r.get("tenpai", []))
+            db.get_games_data.clear()
+            db.get_rounds_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1)}
@@ -1177,6 +1180,7 @@ def show_data_manage():
                 st.caption(f"計 {len(df)}件（先頭10件表示）")
                 if st.button("取込む", type="primary", use_container_width=True):
                     count = db.import_games_from_df(df)
+                    db.get_games_data.clear()
                     st.success(f"{count}件を取込みました。")
                     st.rerun()
             except Exception as e:
@@ -1205,6 +1209,7 @@ def show_data_manage():
             st.caption(f"合計: {total:,}点")
             if st.button("保存", type="primary", disabled=not ok, use_container_width=True):
                 db.update_game_scores(sel_id, new_scores)
+                db.get_games_data.clear()
                 st.success("保存しました。")
                 st.rerun()
 
@@ -1232,6 +1237,8 @@ def show_data_manage():
             if st.button("この試合を削除", type="primary",
                          disabled=not confirmed, use_container_width=True):
                 db.delete_game(int(sel_id))
+                db.get_games_data.clear()
+                db.get_rounds_data.clear()
                 st.success(f"Game #{sel_id} を削除しました。")
                 st.rerun()
 

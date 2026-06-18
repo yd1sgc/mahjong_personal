@@ -1,11 +1,11 @@
 import os
 import psycopg2
 import pandas as pd
+import streamlit as st
 
 
 def get_connection():
     try:
-        import streamlit as st
         db = st.secrets["database"]
     except Exception:
         return psycopg2.connect(os.environ.get("DATABASE_URL", ""))
@@ -118,6 +118,7 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
     conn.close()
 
 
+@st.cache_data(ttl=300)
 def get_games_data(year_filter=None):
     conn = get_connection()
     df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
@@ -135,6 +136,7 @@ def get_games_data(year_filter=None):
     return df.sort_values('game_id', ascending=False)
 
 
+@st.cache_data(ttl=300)
 def get_rounds_data():
     conn = get_connection()
     df = _fetch_df(conn, "SELECT * FROM rounds")
