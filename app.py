@@ -1127,9 +1127,41 @@ def show_stats():
 
 def show_data_manage():
     st.title("データ管理")
-    tab1, tab2, tab3 = st.tabs(["CSV取込", "スコア修正", "試合削除"])
+    tab1, tab2, tab3, tab4 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除"])
 
     with tab1:
+        st.subheader("CSVエクスポート")
+        st.caption("全データをダウンロードしてバックアップできます。")
+
+        df_games_exp = db.load_all_games()
+        df_rounds_exp = db.load_all_rounds()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("試合数", len(df_games_exp))
+            if not df_games_exp.empty:
+                st.download_button(
+                    "games.csv",
+                    data=df_games_exp.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="mahjong_games.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+        with col2:
+            st.metric("局数", len(df_rounds_exp))
+            if not df_rounds_exp.empty:
+                st.download_button(
+                    "rounds.csv",
+                    data=df_rounds_exp.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="mahjong_rounds.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+        if df_games_exp.empty:
+            st.info("エクスポートできる記録がありません。")
+
+    with tab2:
         st.subheader("CSVファイル取込")
         st.caption("形式: game_id, date, p1_name, p1_score, p2_name, p2_score, p3_name, p3_score, p4_name, p4_score（ヘッダーなし）")
         uploaded = st.file_uploader("CSVファイルを選択", type="csv", key="csv_upload")
@@ -1150,7 +1182,7 @@ def show_data_manage():
             except Exception as e:
                 st.error(f"読み込みエラー: {e}")
 
-    with tab2:
+    with tab3:
         st.subheader("スコア修正")
         df_games = db.load_all_games()
         if df_games.empty:
@@ -1176,7 +1208,7 @@ def show_data_manage():
                 st.success("保存しました。")
                 st.rerun()
 
-    with tab3:
+    with tab4:
         st.subheader("試合削除")
         df_games = db.load_all_games()
         if df_games.empty:
