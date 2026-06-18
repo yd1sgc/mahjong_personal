@@ -937,7 +937,7 @@ def show_stats():
     # ── 試合成績テーブル ──────────────────────────────────
     if not game_stats.empty:
         st.subheader("試合成績")
-        game_cols = ["名前", "試合数", "総合pt", "平均順位",
+        game_cols = ["名前", "試合数", "総合pt", "オカなし総合pt", "平均順位",
                      "連対率", "ラス回避率", "1着率", "2着率", "3着率", "4着率"]
         show_cols = [c for c in game_cols if c in game_stats.columns]
         st.dataframe(
@@ -948,8 +948,8 @@ def show_stats():
     # ── 詳細成績テーブル ──────────────────────────────────
     if not round_stats.empty:
         st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
-        round_cols = ["名前", "和了率", "放銃率", "副露率", "リーチ率",
-                      "リーチ成功率", "平均和了", "平均放銃"]
+        round_cols = ["名前", "和了率", "ツモ率", "放銃率", "副露率", "リーチ率",
+                      "リーチ成功率", "テンパイ率", "平均和了", "平均放銃"]
         show_cols = [c for c in round_cols if c in round_stats.columns]
         st.dataframe(
             round_stats[show_cols].sort_values("和了率", ascending=False),

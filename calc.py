@@ -22,7 +22,10 @@ UMA_SETTINGS = {
     4: -10
 }
 
-# 3. 素点の計算方法 (True=整数に丸める, False=小数点のまま)
+# 3. 配給原点（オカなし計算に使用）
+INIT_SCORE = 25000
+
+# 4. 素点の計算方法 (True=整数に丸める, False=小数点のまま)
 ROUND_INTEGER = False
 
 # ==========================================
@@ -48,6 +51,18 @@ def calculate_score(han, fu, is_dealer, is_tsumo):
             return round_up(base * 2) + round_up(base) * 2, round_up(base * 2), round_up(base)
     else:
         return (round_up(base * 6) if is_dealer else round_up(base * 4)), 0, 0
+
+def calc_oka_nashi_point(score, rank):
+    """オカなし版（配給原点返し + 1位からオカ分を除外、ゼロサム維持）"""
+    oka = (RETURN_POINT - INIT_SCORE) * 4 / 1000  # = 20pt
+    base_pt = (score - INIT_SCORE) / 1000
+    uma_pt = UMA_SETTINGS.get(rank, 0) - (oka if rank == 1 else 0)
+    total = base_pt + uma_pt
+    if ROUND_INTEGER:
+        return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
+    else:
+        return round(total, 1)
+
 
 def calc_special_point(score, rank):
     """ ウマ・オカ計算 (設定反映版) """
@@ -77,7 +92,7 @@ def analyze_stats(df_games, df_rounds):
 
     # ── 1. ゲームレベル集計（全試合対象）──────────────────────
     game_stats = {name: {
-        "試合数": 0, "総合pt": 0.0, "順位合計": 0,
+        "試合数": 0, "総合pt": 0.0, "オカなし総合pt": 0.0, "順位合計": 0,
         "1着": 0, "2着": 0, "3着": 0, "4着": 0,
     } for name in valid_players}
 
@@ -90,6 +105,7 @@ def analyze_stats(df_games, df_rounds):
             rank = row.get(f'p{i}_rank', 0)
             game_stats[name]["試合数"] += 1
             game_stats[name]["総合pt"] += calc_special_point(score, rank)
+            game_stats[name]["オカなし総合pt"] += calc_oka_nashi_point(score, rank)
             if rank > 0:
                 game_stats[name]["順位合計"] += rank
                 game_stats[name][f"{rank}着"] += 1
@@ -103,6 +119,7 @@ def analyze_stats(df_games, df_rounds):
             "名前": n,
             "試合数": g,
             "総合pt": round(d["総合pt"], 1),
+            "オカなし総合pt": round(d["オカなし総合pt"], 1),
             "平均順位": round(d["順位合計"] / g, 2),
             "連対率": round((d["1着"] + d["2着"]) / g * 100, 1),
             "ラス回避率": round((d["1着"] + d["2着"] + d["3着"]) / g * 100, 1),
@@ -135,7 +152,7 @@ def analyze_stats(df_games, df_rounds):
         }
 
     round_stats = {name: {
-        "局数": 0, "和了": 0, "放銃": 0, "副露": 0,
+        "局数": 0, "和了": 0, "ツモ": 0, "放銃": 0, "副露": 0,
         "リーチ": 0, "リーチ後和了": 0,
         "和了点": 0, "放銃点": 0,
         "流局": 0, "テンパイ": 0, "チョンボ": 0,
@@ -190,6 +207,10 @@ def analyze_stats(df_games, df_rounds):
         if winner and winner in round_stats:
             round_stats[winner]["和了"] += 1
             round_stats[winner]["和了点"] += r.get('score', 0)
+            # ツモ判定: win_type=='tsumo' または 旧データ(loserが空)で推定
+            is_tsumo = win_type == 'tsumo' or (win_type in ('', None) and not loser)
+            if is_tsumo:
+                round_stats[winner]["ツモ"] += 1
         if loser and loser in round_stats:
             round_stats[loser]["放銃"] += 1
             round_stats[loser]["放銃点"] += r.get('score', 0)
@@ -209,6 +230,7 @@ def analyze_stats(df_games, df_rounds):
             "リーチ成功率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0,
             "平均和了": round(d["和了点"] / d["和了"]) if d["和了"] else 0,
             "平均放銃": round(d["放銃点"] / d["放銃"]) if d["放銃"] else 0,
+            "ツモ率": round(d["ツモ"] / d["和了"] * 100, 1) if d["和了"] else 0.0,
         }
         if d["流局"] > 0:
             row["テンパイ率"] = round(d["テンパイ"] / d["流局"] * 100, 1)
