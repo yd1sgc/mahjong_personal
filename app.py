@@ -84,7 +84,8 @@ st.markdown("""
   [data-testid="stColumn"]:first-child .stButton > button p:first-child {
     font-size: 13px !important;
     font-weight: normal !important;
-    color: rgba(255,255,255,0.65) !important;
+    color: inherit !important;
+    opacity: 0.6;
 }
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
   [data-testid="stColumn"]:first-child .stButton > button p:last-child {
@@ -196,6 +197,7 @@ def undo_last():
     st.session_state.riichi_declared = snap["riichi_declared"]
     st.session_state.furo_declared = snap["furo_declared"]
     st.session_state.round_history = snap["round_history"]
+    st.session_state.diff_target = None
     return True
 
 def record_round(winner, loser, win_type, score, tenpai=None):
@@ -417,6 +419,7 @@ def show_simple_input():
             st.session_state.last_result = {
                 "game_id": game_id, "date": date_str, "rows": result_rows
             }
+            reset_game()
             st.session_state.view = "result"
             st.rerun()
     with c2:
