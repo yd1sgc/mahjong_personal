@@ -973,7 +973,54 @@ def show_stats():
     # ── 対局履歴 ──────────────────────────────────────────
     st.divider()
     st.subheader("対局履歴")
-    st.dataframe(df_games.head(20), use_container_width=True)
+
+    # 整形テーブル：順位順に並び替えて1行1試合で表示
+    history_rows = []
+    for _, row in df_games.sort_values("game_id", ascending=False).iterrows():
+        players = sorted(
+            [(row[f'p{i}_rank'], row[f'p{i}_name'], row[f'p{i}_score'],
+              calc.calc_special_point(row[f'p{i}_score'], row[f'p{i}_rank']))
+             for i in range(1, 5)],
+            key=lambda x: x[0]
+        )
+        d = row['date']
+        date_str = d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
+        history_rows.append({
+            "#": int(row['game_id']),
+            "日付": date_str,
+            "1位": f"{players[0][1]} ({players[0][3]:+.1f})",
+            "2位": f"{players[1][1]} ({players[1][3]:+.1f})",
+            "3位": f"{players[2][1]} ({players[2][3]:+.1f})",
+            "4位": f"{players[3][1]} ({players[3][3]:+.1f})",
+        })
+    df_history = pd.DataFrame(history_rows)
+    st.dataframe(df_history, use_container_width=True, hide_index=True)
+
+    # ── 複数試合の合計集計 ────────────────────────────────
+    st.divider()
+    st.subheader("選択試合の合計集計")
+    all_game_ids = df_games.sort_values("game_id", ascending=False)["game_id"].tolist()
+    selected_ids = st.multiselect(
+        "集計するゲームIDを選択",
+        options=all_game_ids,
+        format_func=lambda gid: f"#{int(gid)}  {df_history[df_history['#']==int(gid)]['日付'].values[0]}  {df_history[df_history['#']==int(gid)]['1位'].values[0]}",
+        key="agg_game_ids",
+    )
+    if selected_ids:
+        agg: dict = {}
+        counts: dict = {}
+        for _, row in df_games[df_games["game_id"].isin(selected_ids)].iterrows():
+            for i in range(1, 5):
+                name = row[f'p{i}_name']
+                pt = calc.calc_special_point(row[f'p{i}_score'], row[f'p{i}_rank'])
+                agg[name] = agg.get(name, 0.0) + pt
+                counts[name] = counts.get(name, 0) + 1
+        df_agg = pd.DataFrame([
+            {"名前": name, "合計pt": f"{agg[name]:+.1f}", "参加試合数": counts[name]}
+            for name in sorted(agg, key=lambda n: agg[n], reverse=True)
+        ])
+        st.caption(f"{len(selected_ids)}試合の合計")
+        st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"
