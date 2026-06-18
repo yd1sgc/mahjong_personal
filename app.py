@@ -166,7 +166,7 @@ db.init_db()
 
 def get_round_name(idx=None):
     i = idx if idx is not None else st.session_state.round_idx
-    wind = ["東", "南", "西", "北"][i // 4]
+    wind = ["東", "南", "西"][min(i // 4, 2)]
     return f"{wind}{(i % 4) + 1}局"
 
 def get_dealer():
@@ -431,6 +431,32 @@ def show_simple_input():
 # ── 画面: 対局中メイン ────────────────────────────────────
 
 def show_game():
+    # ─ 終局・西入り判定 ──────────────────────────────────
+    idx = st.session_state.round_idx
+    top_score = max(st.session_state.scores.values())
+
+    end_reason = None
+    if idx >= 12:
+        end_reason = "西4局終了（北入りなし）"
+    elif idx >= 8 and top_score >= 30000:
+        end_reason = f"トップ {top_score:,}点（30,000点以上）"
+
+    if end_reason:
+        st.info(f"終局条件：{end_reason}")
+        if st.button("終局・記録する", type="primary", use_container_width=True):
+            st.session_state.input_mode = "endgame"
+            st.rerun()
+        if st.button("↩ 元に戻す",
+                     disabled=not st.session_state.undo_stack,
+                     use_container_width=True):
+            undo_last()
+            st.rerun()
+        return
+
+    if idx == 8:
+        st.warning(f"西入り　トップ {top_score:,}点（30,000点未満）")
+
+    # ────────────────────────────────────────────────────
     players = st.session_state.players
     scores = st.session_state.scores
     diff_target = st.session_state.diff_target
