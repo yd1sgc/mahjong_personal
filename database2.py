@@ -7,15 +7,15 @@ def get_connection():
     try:
         import streamlit as st
         db = st.secrets["database"]
-        return psycopg2.connect(
-            host=db["host"],
-            port=int(db["port"]),
-            user=db["user"],
-            password=db["password"],
-            dbname=db["dbname"]
-        )
     except Exception:
         return psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+    return psycopg2.connect(
+        host=db["host"],
+        port=int(db["port"]),
+        user=db["user"],
+        password=db["password"],
+        dbname=db["dbname"]
+    )
 
 
 def _fetch_df(conn, query, params=None):
@@ -118,14 +118,6 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
     conn.close()
 
 
-def update_round_game_id(game_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("UPDATE rounds SET game_id=%s WHERE game_id=0", (game_id,))
-    conn.commit()
-    conn.close()
-
-
 def get_games_data(year_filter=None):
     conn = get_connection()
     df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
@@ -148,15 +140,6 @@ def get_rounds_data():
     df = _fetch_df(conn, "SELECT * FROM rounds")
     conn.close()
     return df
-
-
-def apply_year_split():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("UPDATE games SET date='2024-12-31' WHERE game_id<=69")
-    c.execute("UPDATE games SET date='2025-01-01' WHERE game_id>=70")
-    conn.commit()
-    conn.close()
 
 
 def load_all_games():
