@@ -153,6 +153,7 @@ def init_session():
         "round_history": [],
         "selected_players": [],
         "game_mode": "detail",
+        "confirm_endgame": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -320,7 +321,7 @@ def reset_game():
         "game_active", "players", "scores", "round_idx", "honba",
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",
         "input_mode", "win_step", "win_data", "undo_stack", "round_history",
-        "selected_players", "tenpai_selection",
+        "selected_players", "tenpai_selection", "confirm_endgame",
     ]
     for k in keys:
         if k in st.session_state:
@@ -593,9 +594,22 @@ def show_game():
             st.rerun()
 
     st.divider()
-    if st.button("終局・記録する", use_container_width=True):
-        st.session_state.input_mode = "endgame"
-        st.rerun()
+    if st.session_state.confirm_endgame:
+        st.warning("本当に終局しますか？")
+        c_yes, c_no = st.columns(2)
+        with c_yes:
+            if st.button("はい、終局する", type="primary", use_container_width=True):
+                st.session_state.confirm_endgame = False
+                st.session_state.input_mode = "endgame"
+                st.rerun()
+        with c_no:
+            if st.button("キャンセル", use_container_width=True):
+                st.session_state.confirm_endgame = False
+                st.rerun()
+    else:
+        if st.button("終局・記録する", use_container_width=True):
+            st.session_state.confirm_endgame = True
+            st.rerun()
 
 
 # ── 画面: 和了入力 ────────────────────────────────────────
@@ -1178,7 +1192,11 @@ def show_data_manage():
             for i in range(1, 5):
                 rank = int(row.get(f'p{i}_rank', i))
                 st.write(f"{rank}位: {row[f'p{i}_name']}  {int(row[f'p{i}_score']):,}点")
-            confirmed = st.checkbox("削除を確認する", key="del_confirm")
+            confirm_input = st.text_input(
+                f"削除確認：ゲームID「{int(sel_id)}」を入力してください",
+                placeholder=str(int(sel_id)), key="del_confirm_id"
+            )
+            confirmed = confirm_input.strip() == str(int(sel_id))
             if st.button("この試合を削除", type="primary",
                          disabled=not confirmed, use_container_width=True):
                 db.delete_game(int(sel_id))
