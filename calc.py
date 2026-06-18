@@ -138,21 +138,38 @@ def analyze_stats(df_games, df_rounds):
         "局数": 0, "和了": 0, "放銃": 0, "副露": 0,
         "リーチ": 0, "リーチ後和了": 0,
         "和了点": 0, "放銃点": 0,
+        "流局": 0, "テンパイ": 0, "チョンボ": 0,
     } for name in valid_players}
 
     has_riichi = 'riichi_names' in df_rounds.columns
+    has_win_type = 'win_type' in df_rounds.columns
     df_r = df_rounds[df_rounds['game_id'].isin(round_game_ids)]
 
     for _, r in df_r.iterrows():
         game_id = r['game_id']
         game_players = game_players_map.get(game_id, set())
-        winner = r.get('winner', '')
+        winner = r.get('winner', '') or ''
+        loser = r.get('loser', '') or ''
+        win_type = (r.get('win_type', '') or '') if has_win_type else ''
+
+        # チョンボは局数に含めず別カウント
+        if win_type == 'chombo':
+            if winner in round_stats:
+                round_stats[winner]["チョンボ"] += 1
+            continue
 
         riichi_players = []
         if has_riichi:
             r_names = r.get('riichi_names', '')
             if pd.notna(r_names) and isinstance(r_names, str):
                 riichi_players = [x for x in r_names.split(',') if x]
+
+        # 流局判定: win_type が ryukyoku、または旧データ（winner/loser が両方空）
+        is_ryukyoku = win_type == 'ryukyoku' or (not winner and not loser and win_type == '')
+
+        if is_ryukyoku:
+            tenpai_str = r.get('tenpai_names', '') or ''
+            tenpai_players = [x for x in tenpai_str.split(',') if x] if isinstance(tenpai_str, str) else []
 
         for m in round_stats.keys():
             if m not in game_players:
@@ -165,12 +182,15 @@ def analyze_stats(df_games, df_rounds):
                 round_stats[m]["リーチ"] += 1
                 if m == winner:
                     round_stats[m]["リーチ後和了"] += 1
+            if is_ryukyoku:
+                round_stats[m]["流局"] += 1
+                if m in tenpai_players:
+                    round_stats[m]["テンパイ"] += 1
 
-        if winner in round_stats:
+        if winner and winner in round_stats:
             round_stats[winner]["和了"] += 1
             round_stats[winner]["和了点"] += r.get('score', 0)
-        loser = r.get('loser', '')
-        if loser in round_stats:
+        if loser and loser in round_stats:
             round_stats[loser]["放銃"] += 1
             round_stats[loser]["放銃点"] += r.get('score', 0)
 
@@ -180,7 +200,7 @@ def analyze_stats(df_games, df_rounds):
         if k == 0:
             continue
         r_count = d["リーチ"]
-        round_data.append({
+        row = {
             "名前": n,
             "和了率": round(d["和了"] / k * 100, 1),
             "放銃率": round(d["放銃"] / k * 100, 1),
@@ -189,7 +209,14 @@ def analyze_stats(df_games, df_rounds):
             "リーチ成功率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0,
             "平均和了": round(d["和了点"] / d["和了"]) if d["和了"] else 0,
             "平均放銃": round(d["放銃点"] / d["放銃"]) if d["放銃"] else 0,
-        })
+        }
+        if d["流局"] > 0:
+            row["テンパイ率"] = round(d["テンパイ"] / d["流局"] * 100, 1)
+        else:
+            row["テンパイ率"] = 0.0
+        if d["チョンボ"] > 0:
+            row["チョンボ数"] = d["チョンボ"]
+        round_data.append(row)
     df_round_stats = pd.DataFrame(round_data)
 
     return df_game_stats, df_round_stats, n_round_games

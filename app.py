@@ -287,6 +287,34 @@ def apply_ryukyoku(tenpai_players):
     st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
 
+def apply_chombo(player):
+    save_snapshot()
+    players = st.session_state.players
+    scores = st.session_state.scores
+    dealer = get_dealer()
+
+    if player == dealer:
+        # 親チョンボ: 子3人に各4000点
+        for p in players:
+            if p != player:
+                scores[player] -= 4000
+                scores[p] += 4000
+    else:
+        # 子チョンボ: 親に4000点、他の子に各2000点
+        for p in players:
+            if p == player:
+                continue
+            elif p == dealer:
+                scores[player] -= 4000
+                scores[p] += 4000
+            else:
+                scores[player] -= 2000
+                scores[p] += 2000
+
+    record_round(player, None, "chombo", 0)
+    st.session_state.input_mode = "normal"
+
+
 def reset_game():
     keys = [
         "game_active", "players", "scores", "round_idx", "honba",
@@ -548,12 +576,16 @@ def show_game():
             st.session_state.tenpai_selection = list(riichi_declared)
             st.rerun()
 
-    c3, c4 = st.columns(2)
+    c3, c4, c5 = st.columns(3)
     with c3:
+        if st.button("チョンボ", use_container_width=True):
+            st.session_state.input_mode = "chombo"
+            st.rerun()
+    with c4:
         if st.button("局を修正", use_container_width=True):
             st.session_state.input_mode = "edit_history"
             st.rerun()
-    with c4:
+    with c5:
         if st.button("↩ 元に戻す",
                      disabled=not st.session_state.undo_stack,
                      use_container_width=True):
@@ -717,6 +749,28 @@ def show_ryukyoku_input():
             st.rerun()
 
 
+# ── 画面: チョンボ ────────────────────────────────────────
+
+def show_chombo_input():
+    st.title("チョンボ")
+    players = st.session_state.players
+    dealer = get_dealer()
+
+    st.subheader("チョンボしたプレイヤーを選択")
+    for p in players:
+        if p == dealer:
+            label = f"★ {p}（親）　→ 子3人に各4,000点"
+        else:
+            label = f"{p}　→ 親に4,000点・子2人に各2,000点"
+        if st.button(label, key=f"chombo_{p}", use_container_width=True):
+            apply_chombo(p)
+            st.rerun()
+
+    if st.button("キャンセル", use_container_width=True):
+        st.session_state.input_mode = "normal"
+        st.rerun()
+
+
 # ── 画面: 局履歴修正 ──────────────────────────────────────
 
 def show_edit_history():
@@ -731,7 +785,7 @@ def show_edit_history():
             st.rerun()
         return
 
-    type_label = {"ron": "ロン", "tsumo": "ツモ", "ryukyoku": "流局"}
+    type_label = {"ron": "ロン", "tsumo": "ツモ", "ryukyoku": "流局", "chombo": "チョンボ"}
     rows = []
     for r in history:
         rows.append({
@@ -751,7 +805,7 @@ def show_edit_history():
         num_rows="dynamic",
         column_config={
             "種別": st.column_config.SelectboxColumn(
-                "種別", options=["ロン", "ツモ", "流局"], width="small"
+                "種別", options=["ロン", "ツモ", "流局", "チョンボ"], width="small"
             ),
             "点数": st.column_config.NumberColumn("点数", min_value=0, step=100),
         },
@@ -761,7 +815,7 @@ def show_edit_history():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("保存", type="primary", use_container_width=True):
-            rev = {"ロン": "ron", "ツモ": "tsumo", "流局": "ryukyoku"}
+            rev = {"ロン": "ron", "ツモ": "tsumo", "流局": "ryukyoku", "チョンボ": "chombo"}
             new_history = []
             for _, row in edited.iterrows():
                 wt = rev.get(str(row["種別"]), "ron")
@@ -814,7 +868,9 @@ def show_endgame():
             game_id = db.save_game(date_str, scores, players)
             for r in st.session_state.round_history:
                 db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
-                              r["score"], r["furo"], r["riichi"])
+                              r["score"], r["furo"], r["riichi"],
+                              win_type=r.get("win_type", ""),
+                              tenpai=r.get("tenpai", []))
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1)}
@@ -1153,6 +1209,8 @@ elif mode == "win":
     show_win_input()
 elif mode == "ryukyoku":
     show_ryukyoku_input()
+elif mode == "chombo":
+    show_chombo_input()
 elif mode == "edit_history":
     show_edit_history()
 elif mode == "endgame":

@@ -38,6 +38,13 @@ def init_db():
     except Exception:
         pass
 
+    # win_type 列が古いDBに存在しない場合は追加
+    try:
+        c.execute("ALTER TABLE rounds ADD COLUMN win_type TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -64,26 +71,25 @@ def save_game(date_str, scores, players):
     return next_id
 
  # database.py の save_round 関数をこれに置き換え
-def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi):
-    # furo と riichi はリストで渡ってくる想定
+def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None):
     furo_str = ",".join(furo) if isinstance(furo, list) else ""
-    
-    # ★ここを修正：riichiがリストなら名前を連結して保存する
+    tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
+
     if isinstance(riichi, list):
         riichi_names_str = ",".join(riichi)
         riichi_cnt = len(riichi)
     else:
-        # 以前のデータとの互換性用
-        riichi_names_str = "" 
+        riichi_names_str = ""
         riichi_cnt = int(riichi)
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # riichi_names という新しい列にもデータを入れます
     c.execute("""INSERT INTO rounds (
-        game_id, kyoku_name, winner, loser, score, furo_names, riichi_names, riichi_count
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
-        game_id, kyoku_name, winner, loser, score, furo_str, riichi_names_str, riichi_cnt
+        game_id, kyoku_name, winner, loser, score,
+        furo_names, riichi_names, riichi_count, tenpai_names, win_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+        game_id, kyoku_name, winner, loser, score,
+        furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type
     ))
     conn.commit()
     conn.close()
