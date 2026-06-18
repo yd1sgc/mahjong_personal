@@ -1,26 +1,57 @@
-import sqlite3
 import os
+import psycopg2
 import pandas as pd
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mahjong_v3_complete.db')
+
+def get_connection():
+    try:
+        import streamlit as st
+        db = st.secrets["database"]
+        return psycopg2.connect(
+            host=db["host"],
+            port=int(db["port"]),
+            user=db["user"],
+            password=db["password"],
+            dbname=db["dbname"]
+        )
+    except Exception:
+        return psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+
+
+def _fetch_df(conn, query, params=None):
+    c = conn.cursor()
+    c.execute(query, params or ())
+    rows = c.fetchall()
+    cols = [desc[0] for desc in c.description]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def _str(v):
+    return v if v is not None else ""
+
+
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
-    
-    # 試合テーブル
+
     c.execute('''CREATE TABLE IF NOT EXISTS games (
-        game_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER PRIMARY KEY,
         date TEXT,
         p1_name TEXT, p1_score INTEGER, p1_rank INTEGER,
         p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
         p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
         p4_name TEXT, p4_score INTEGER, p4_rank INTEGER
     )''')
-    
-    # 局テーブル（ここに必要な列をすべて定義）
+
     c.execute('''CREATE TABLE IF NOT EXISTS rounds (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         game_id INTEGER,
         kyoku_name TEXT,
         winner TEXT,
@@ -28,29 +59,21 @@ def init_db():
         score INTEGER,
         furo_names TEXT,
         riichi_names TEXT,
-        riichi_count INTEGER
+        riichi_count INTEGER,
+        tenpai_names TEXT DEFAULT '',
+        win_type TEXT DEFAULT ''
     )''')
-    
-    # tenpai_names 列が古いDBに存在しない場合は追加
-    try:
-        c.execute("ALTER TABLE rounds ADD COLUMN tenpai_names TEXT DEFAULT ''")
-        conn.commit()
-    except Exception:
-        pass
 
-    # win_type 列が古いDBに存在しない場合は追加
-    try:
-        c.execute("ALTER TABLE rounds ADD COLUMN win_type TEXT DEFAULT ''")
-        conn.commit()
-    except Exception:
-        pass
+    c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS tenpai_names TEXT DEFAULT ''")
+    c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS win_type TEXT DEFAULT ''")
 
     conn.commit()
     conn.close()
 
+
 def save_game(date_str, scores, players):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
     next_id = c.fetchone()[0]
@@ -59,7 +82,7 @@ def save_game(date_str, scores, players):
         p2_name, p2_score, p2_rank,
         p3_name, p3_score, p3_rank,
         p4_name, p4_score, p4_rank
-    ) VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
+    ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
         next_id, date_str,
         sorted_p[0][0], sorted_p[0][1], 1,
         sorted_p[1][0], sorted_p[1][1], 2,
@@ -70,7 +93,7 @@ def save_game(date_str, scores, players):
     conn.close()
     return next_id
 
- # database.py の save_round 関数をこれに置き換え
+
 def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None):
     furo_str = ",".join(furo) if isinstance(furo, list) else ""
     tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
@@ -82,103 +105,145 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
         riichi_names_str = ""
         riichi_cnt = int(riichi)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
     c.execute("""INSERT INTO rounds (
         game_id, kyoku_name, winner, loser, score,
         furo_names, riichi_names, riichi_count, tenpai_names, win_type
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (
         game_id, kyoku_name, winner, loser, score,
         furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type
     ))
     conn.commit()
     conn.close()
 
+
 def update_round_game_id(game_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE rounds SET game_id=? WHERE game_id=0", (game_id,))
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE rounds SET game_id=%s WHERE game_id=0", (game_id,))
     conn.commit()
     conn.close()
 
+
 def get_games_data(year_filter=None):
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM games ORDER BY game_id DESC", conn)
+    conn = get_connection()
+    df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
     conn.close()
-    if df.empty: return df
+    if df.empty:
+        return df
 
     df['date'] = pd.to_datetime(df['date'], format='mixed')
     df = df.sort_values('game_id')
     df['match_no'] = range(1, len(df) + 1)
-    
+
     if year_filter and year_filter != "全期間":
         df = df[df['date'].dt.year == int(year_filter)]
-    
+
     return df.sort_values('game_id', ascending=False)
 
+
 def get_rounds_data():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM rounds", conn)
+    conn = get_connection()
+    df = _fetch_df(conn, "SELECT * FROM rounds")
     conn.close()
     return df
 
+
 def apply_year_split():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
     c.execute("UPDATE games SET date='2024-12-31' WHERE game_id<=69")
     c.execute("UPDATE games SET date='2025-01-01' WHERE game_id>=70")
     conn.commit()
     conn.close()
 
-# --- 編集用追加機能 ---
+
 def load_all_games():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM games", conn)
+    conn = get_connection()
+    df = _fetch_df(conn, "SELECT * FROM games")
     conn.close()
     return df
+
 
 def save_all_games(df):
-    conn = sqlite3.connect(DB_PATH)
-    df.to_sql('games', conn, if_exists='replace', index=False)
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM games")
+    for _, row in df.iterrows():
+        c.execute('''INSERT INTO games (game_id, date,
+            p1_name, p1_score, p1_rank,
+            p2_name, p2_score, p2_rank,
+            p3_name, p3_score, p3_rank,
+            p4_name, p4_score, p4_rank
+        ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
+            _int(row['game_id']), _str(row.get('date')),
+            _str(row.get('p1_name')), _int(row.get('p1_score')), _int(row.get('p1_rank')),
+            _str(row.get('p2_name')), _int(row.get('p2_score')), _int(row.get('p2_rank')),
+            _str(row.get('p3_name')), _int(row.get('p3_score')), _int(row.get('p3_rank')),
+            _str(row.get('p4_name')), _int(row.get('p4_score')), _int(row.get('p4_rank')),
+        ))
+    conn.commit()
     conn.close()
 
+
 def load_all_rounds():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM rounds", conn)
+    conn = get_connection()
+    df = _fetch_df(conn, "SELECT * FROM rounds")
     conn.close()
     return df
 
+
 def save_all_rounds(df):
-    conn = sqlite3.connect(DB_PATH)
-    df.to_sql('rounds', conn, if_exists='replace', index=False)
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM rounds")
+    for _, row in df.iterrows():
+        c.execute('''INSERT INTO rounds (
+            game_id, kyoku_name, winner, loser, score,
+            furo_names, riichi_names, riichi_count, tenpai_names, win_type
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''', (
+            _int(row.get('game_id')),
+            _str(row.get('kyoku_name')), _str(row.get('winner')), _str(row.get('loser')),
+            _int(row.get('score', 0)),
+            _str(row.get('furo_names')), _str(row.get('riichi_names')),
+            _int(row.get('riichi_count', 0)),
+            _str(row.get('tenpai_names')), _str(row.get('win_type')),
+        ))
+    conn.commit()
     conn.close()
+
 
 def update_game_scores(game_id, scores_dict):
     sorted_p = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
     name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=?", (game_id,))
+    c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=%s", (game_id,))
     row = c.fetchone()
     if row:
         for slot in range(1, 5):
             name = row[slot - 1]
             if name in scores_dict:
                 c.execute(
-                    f"UPDATE games SET p{slot}_score=?, p{slot}_rank=? WHERE game_id=?",
+                    f"UPDATE games SET p{slot}_score=%s, p{slot}_rank=%s WHERE game_id=%s",
                     (scores_dict[name], name_to_rank[name], game_id)
                 )
     conn.commit()
     conn.close()
 
+
 def delete_game(game_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM games WHERE game_id=?", (game_id,))
-    conn.execute("DELETE FROM rounds WHERE game_id=?", (game_id,))
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM games WHERE game_id=%s", (game_id,))
+    c.execute("DELETE FROM rounds WHERE game_id=%s", (game_id,))
     conn.commit()
     conn.close()
 
+
 def import_games_from_df(df):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
     next_id = c.fetchone()[0]
@@ -197,7 +262,7 @@ def import_games_from_df(df):
             p2_name, p2_score, p2_rank,
             p3_name, p3_score, p3_rank,
             p4_name, p4_score, p4_rank
-        ) VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)''', (
+        ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
             next_id, str(row['date']),
             players[0][0], players[0][1], name_to_rank[players[0][0]],
             players[1][0], players[1][1], name_to_rank[players[1][0]],

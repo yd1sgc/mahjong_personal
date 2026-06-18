@@ -11,3 +11,6 @@ __pycache__/
 # 旧バージョン（app.py に一本化）
 main_app.py
 main_app2.py
+
+# パスワード（絶対にGitHubにアップしない）
+.streamlit/secrets.toml
