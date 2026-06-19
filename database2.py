@@ -4,14 +4,27 @@ import psycopg2
 import pandas as pd
 import streamlit as st
 
-SQLITE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mahjong_local.db")
+SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db"
 
 
 def get_local_connection():
     return sqlite3.connect(SQLITE_PATH)
 
 
+def get_local_unsynced_games():
+    try:
+        if not os.path.exists(SQLITE_PATH):
+            return pd.DataFrame()
+        conn = get_local_connection()
+        df = _fetch_df(conn, "SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id DESC")
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 def init_local_db():
+    os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
     conn = get_local_connection()
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS games (

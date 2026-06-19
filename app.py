@@ -1087,6 +1087,31 @@ def show_stats():
     st.divider()
     st.subheader("対局履歴")
 
+    # 未同期データ（SQLite）の表示
+    df_unsynced = db.get_local_unsynced_games()
+    if not df_unsynced.empty:
+        st.warning(f"未同期のデータが {len(df_unsynced)} 件あります（データ管理 → 同期タブから送信できます）")
+        df_unsynced['date'] = pd.to_datetime(df_unsynced['date'], format='mixed', errors='coerce')
+        unsync_rows = []
+        for _, row in df_unsynced.iterrows():
+            players = sorted(
+                [(row[f'p{i}_rank'], row[f'p{i}_name'], row[f'p{i}_score'],
+                  calc.calc_special_point(row[f'p{i}_score'], row[f'p{i}_rank']))
+                 for i in range(1, 5)],
+                key=lambda x: x[0]
+            )
+            d = row['date']
+            date_str = d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
+            unsync_rows.append({
+                "日付": date_str,
+                "1位": f"{players[0][1]} ({players[0][3]:+.1f})",
+                "2位": f"{players[1][1]} ({players[1][3]:+.1f})",
+                "3位": f"{players[2][1]} ({players[2][3]:+.1f})",
+                "4位": f"{players[3][1]} ({players[3][3]:+.1f})",
+            })
+        st.dataframe(pd.DataFrame(unsync_rows), use_container_width=True, hide_index=True)
+        st.divider()
+
     # 整形テーブル：順位順に並び替えて1行1試合で表示
     history_rows = []
     for _, row in df_games.sort_values("game_id", ascending=False).iterrows():
