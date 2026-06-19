@@ -1,7 +1,165 @@
 import os
+import sqlite3
 import psycopg2
 import pandas as pd
 import streamlit as st
+
+SQLITE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mahjong_local.db")
+
+
+def get_local_connection():
+    return sqlite3.connect(SQLITE_PATH)
+
+
+def init_local_db():
+    conn = get_local_connection()
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS games (
+        game_id INTEGER PRIMARY KEY,
+        date TEXT,
+        p1_name TEXT, p1_score INTEGER, p1_rank INTEGER,
+        p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
+        p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
+        p4_name TEXT, p4_score INTEGER, p4_rank INTEGER,
+        is_synced INTEGER DEFAULT 0
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS rounds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER,
+        kyoku_name TEXT,
+        winner TEXT,
+        loser TEXT,
+        score INTEGER,
+        furo_names TEXT DEFAULT '',
+        riichi_names TEXT DEFAULT '',
+        riichi_count INTEGER DEFAULT 0,
+        tenpai_names TEXT DEFAULT '',
+        win_type TEXT DEFAULT '',
+        is_synced INTEGER DEFAULT 0
+    )''')
+    conn.commit()
+    conn.close()
+
+
+def check_connectivity():
+    try:
+        conn = get_connection()
+        conn.close()
+        st.session_state["online"] = True
+        return True
+    except Exception:
+        st.session_state["online"] = False
+        return False
+
+
+def save_game_local(date_str, scores, players):
+    sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    conn = get_local_connection()
+    c = conn.cursor()
+    c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
+    next_id = c.fetchone()[0]
+    c.execute('''INSERT INTO games (game_id, date,
+        p1_name, p1_score, p1_rank,
+        p2_name, p2_score, p2_rank,
+        p3_name, p3_score, p3_rank,
+        p4_name, p4_score, p4_rank,
+        is_synced
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+        next_id, date_str,
+        sorted_p[0][0], sorted_p[0][1], 1,
+        sorted_p[1][0], sorted_p[1][1], 2,
+        sorted_p[2][0], sorted_p[2][1], 3,
+        sorted_p[3][0], sorted_p[3][1], 4,
+        0
+    ))
+    conn.commit()
+    conn.close()
+    return next_id
+
+
+def save_round_local(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None):
+    furo_str = ",".join(furo) if isinstance(furo, list) else ""
+    tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
+    if isinstance(riichi, list):
+        riichi_names_str = ",".join(riichi)
+        riichi_cnt = len(riichi)
+    else:
+        riichi_names_str = ""
+        riichi_cnt = int(riichi)
+    conn = get_local_connection()
+    c = conn.cursor()
+    c.execute('''INSERT INTO rounds (
+        game_id, kyoku_name, winner, loser, score,
+        furo_names, riichi_names, riichi_count, tenpai_names, win_type, is_synced
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (
+        game_id, kyoku_name, winner, loser, score,
+        furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, 0
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_pending_count():
+    conn = get_local_connection()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM games WHERE is_synced = 0")
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+
+def sync_to_supabase():
+    local_conn = get_local_connection()
+    lc = local_conn.cursor()
+    lc.execute("SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id")
+    games = lc.fetchall()
+
+    if not games:
+        local_conn.close()
+        return 0
+
+    remote_conn = get_connection()
+    rc = remote_conn.cursor()
+    rc.execute("SELECT COALESCE(MAX(game_id), 0) FROM games")
+    max_remote_id = rc.fetchone()[0]
+
+    synced_count = 0
+    for game in games:
+        local_game_id = game[0]
+        max_remote_id += 1
+        new_game_id = max_remote_id
+
+        rc.execute('''INSERT INTO games (game_id, date,
+            p1_name, p1_score, p1_rank,
+            p2_name, p2_score, p2_rank,
+            p3_name, p3_score, p3_rank,
+            p4_name, p4_score, p4_rank
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
+            new_game_id, game[1],
+            game[2], game[3], game[4],
+            game[5], game[6], game[7],
+            game[8], game[9], game[10],
+            game[11], game[12], game[13]
+        ))
+
+        lc.execute("SELECT * FROM rounds WHERE game_id=? AND is_synced=0", (local_game_id,))
+        for r in lc.fetchall():
+            rc.execute('''INSERT INTO rounds (
+                game_id, kyoku_name, winner, loser, score,
+                furo_names, riichi_names, riichi_count, tenpai_names, win_type
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
+                new_game_id, r[2], r[3], r[4], r[5],
+                r[6], r[7], r[8], r[9], r[10]
+            ))
+        lc.execute("UPDATE rounds SET is_synced=1 WHERE game_id=?", (local_game_id,))
+        lc.execute("UPDATE games SET is_synced=1 WHERE game_id=?", (local_game_id,))
+        synced_count += 1
+
+    remote_conn.commit()
+    remote_conn.close()
+    local_conn.commit()
+    local_conn.close()
+    return synced_count
 
 
 def get_connection():

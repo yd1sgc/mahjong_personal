@@ -161,6 +161,9 @@ def init_session():
 
 init_session()
 db.init_db()
+db.init_local_db()
+if "online" not in st.session_state:
+    db.check_connectivity()
 
 
 # ── ゲームロジック ────────────────────────────────────────
@@ -439,7 +442,10 @@ def show_simple_input():
                      use_container_width=True):
             sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
-            game_id = db.save_game(date_str, scores, players)
+            if st.session_state.get("online", True):
+                game_id = db.save_game(date_str, scores, players)
+            else:
+                game_id = db.save_game_local(date_str, scores, players)
             db.get_games_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
@@ -880,12 +886,20 @@ def show_endgame():
             st.session_state.scores = scores
             st.session_state.riichi_stick = 0
             date_str = datetime.now().strftime("%Y-%m-%d")
-            game_id = db.save_game(date_str, scores, players)
-            for r in st.session_state.round_history:
-                db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
-                              r["score"], r["furo"], r["riichi"],
-                              win_type=r.get("win_type", ""),
-                              tenpai=r.get("tenpai", []))
+            if st.session_state.get("online", True):
+                game_id = db.save_game(date_str, scores, players)
+                for r in st.session_state.round_history:
+                    db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
+                                  r["score"], r["furo"], r["riichi"],
+                                  win_type=r.get("win_type", ""),
+                                  tenpai=r.get("tenpai", []))
+            else:
+                game_id = db.save_game_local(date_str, scores, players)
+                for r in st.session_state.round_history:
+                    db.save_round_local(game_id, r["kyoku_name"], r["winner"], r["loser"],
+                                        r["score"], r["furo"], r["riichi"],
+                                        win_type=r.get("win_type", ""),
+                                        tenpai=r.get("tenpai", []))
             db.get_games_data.clear()
             db.get_rounds_data.clear()
             result_rows = [
@@ -1130,7 +1144,14 @@ def show_stats():
 
 def show_data_manage():
     st.title("データ管理")
-    tab1, tab2, tab3, tab4 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除"])
+
+    pending = db.get_pending_count()
+    if not st.session_state.get("online", True):
+        st.warning(f"オフラインモード。未同期の試合: {pending}件")
+    elif pending > 0:
+        st.info(f"未同期の試合が {pending}件 あります。")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除", "同期"])
 
     with tab1:
         st.subheader("CSVエクスポート")
@@ -1241,6 +1262,26 @@ def show_data_manage():
                 db.get_rounds_data.clear()
                 st.success(f"Game #{sel_id} を削除しました。")
                 st.rerun()
+
+    with tab5:
+        st.subheader("Supabaseへの同期")
+        pending_now = db.get_pending_count()
+        if pending_now == 0:
+            st.success("未同期のデータはありません。")
+        else:
+            st.warning(f"未同期の試合: {pending_now}件")
+            if st.session_state.get("online", True):
+                if st.button("今すぐ同期する", type="primary", use_container_width=True):
+                    try:
+                        n = db.sync_to_supabase()
+                        db.get_games_data.clear()
+                        db.get_rounds_data.clear()
+                        st.success(f"{n}件の試合をSupabaseに同期しました。")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"同期に失敗しました: {e}")
+            else:
+                st.info("オンラインになってから同期してください。")
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"
