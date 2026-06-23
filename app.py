@@ -161,9 +161,12 @@ def init_session():
 
 init_session()
 db.init_db()
-db.init_local_db()
-if "online" not in st.session_state:
-    db.check_connectivity()
+if db.IS_LOCAL:
+    db.init_local_db()
+    if "online" not in st.session_state:
+        db.check_connectivity()
+else:
+    st.session_state["online"] = True
 
 
 # ── ゲームロジック ────────────────────────────────────────
@@ -965,6 +968,26 @@ def show_stats():
 
     game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
+    # ── 縦長DataFrame（ptは一度だけ計算）─────────────────────
+    df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
+    rows = []
+    for _, row in df_sorted.iterrows():
+        for i in range(1, 5):
+            name = row.get(f"p{i}_name")
+            if pd.isna(name) or not str(name).strip():
+                continue
+            score = int(row[f"p{i}_score"])
+            rank = int(row[f"p{i}_rank"])
+            rows.append({
+                "game_id": row["game_id"],
+                "date": row["date"],
+                "name": str(name).strip(),
+                "score": score,
+                "rank": rank,
+                "pt": calc.calc_special_point(score, rank),
+            })
+    df_results = pd.DataFrame(rows)
+
     # ── 試合成績テーブル ──────────────────────────────────
     if not game_stats.empty:
         st.subheader("試合成績")
@@ -990,38 +1013,35 @@ def show_stats():
     # ── 総合ポイント推移グラフ ────────────────────────────
     st.divider()
     st.subheader("総合ポイント推移")
-    df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
-    cumulative_scores = {name: [0] for name in real_members}
-    match_labels = ["G000"]
-    for i, row in df_sorted.iterrows():
-        match_labels.append(f"G{i+1:03}")
-        game_pts = {
-            row['p1_name']: calc.calc_special_point(row['p1_score'], row['p1_rank']),
-            row['p2_name']: calc.calc_special_point(row['p2_score'], row['p2_rank']),
-            row['p3_name']: calc.calc_special_point(row['p3_score'], row['p3_rank']),
-            row['p4_name']: calc.calc_special_point(row['p4_score'], row['p4_rank']),
-        }
-        for name in real_members:
-            cumulative_scores[name].append(cumulative_scores[name][-1] + game_pts.get(name, 0))
-    df_chart = pd.DataFrame(cumulative_scores, index=match_labels)
+    game_ids_sorted = df_sorted["game_id"].tolist()
+    df_pivot = (
+        df_results.pivot_table(index="game_id", columns="name", values="pt", aggfunc="sum")
+        .reindex(game_ids_sorted)
+        .fillna(0)
+    )
+    df_cumsum = df_pivot.cumsum()
+    df_cumsum.index = [f"G{i+1:03}" for i in range(len(game_ids_sorted))]
+    zero_row = pd.DataFrame(0, index=["G000"], columns=df_cumsum.columns)
+    df_chart = pd.concat([zero_row, df_cumsum])
 
     top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
-    default_sel = [m for m in top5 if m in real_members]
+    default_sel = [m for m in top5 if m in df_chart.columns]
     selected = st.multiselect("表示メンバー", options=real_members,
                               default=default_sel, key="chart_sel")
     if selected:
-        st.line_chart(df_chart[selected])
+        st.line_chart(df_chart[[c for c in selected if c in df_chart.columns]])
 
     # ── レコード ──────────────────────────────────────────
     st.divider()
     st.subheader("レコード")
-    all_scores = []
-    for _, row in df_sorted.iterrows():
-        d = row['date']
-        date_str = d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
-        for i in range(1, 5):
-            all_scores.append([row[f'p{i}_name'], int(row[f'p{i}_score']), date_str])
-    df_scores_all = pd.DataFrame(all_scores, columns=['名前', '点数', '日付'])
+    df_scores_all = (
+        df_results
+        .assign(日付=df_results["date"].apply(
+            lambda d: d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
+        ))
+        [["name", "score", "日付"]]
+        .rename(columns={"name": "名前", "score": "点数"})
+    )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -1035,13 +1055,9 @@ def show_stats():
         st.caption("連勝記録（2連勝以上）")
         streak_data = []
         for p in real_members:
-            my_games = df_sorted[
-                (df_sorted['p1_name']==p)|(df_sorted['p2_name']==p)|
-                (df_sorted['p3_name']==p)|(df_sorted['p4_name']==p)
-            ]
+            p_ranks = df_results[df_results["name"] == p].sort_values("game_id")["rank"]
             max_streak = cur = 0
-            for _, row in my_games.iterrows():
-                rank = next((row[f'p{i}_rank'] for i in range(1,5) if row[f'p{i}_name']==p), 0)
+            for rank in p_ranks:
                 if rank == 1:
                     cur += 1
                     max_streak = max(max_streak, cur)
@@ -1059,20 +1075,17 @@ def show_stats():
     st.divider()
     st.subheader("相性マトリクス（直接対決）")
     st.caption("行が自分、列が相手。数値は同卓時のpt差合計。赤=得意、青=苦手。")
-    matrix_data = {p: {q: 0.0 for q in real_members} for p in real_members}
-    for _, row in df_sorted.iterrows():
-        p_res = {
-            row['p1_name']: calc.calc_special_point(row['p1_score'], row['p1_rank']),
-            row['p2_name']: calc.calc_special_point(row['p2_score'], row['p2_rank']),
-            row['p3_name']: calc.calc_special_point(row['p3_score'], row['p3_rank']),
-            row['p4_name']: calc.calc_special_point(row['p4_score'], row['p4_rank']),
-        }
-        players_in_game = [p for p in p_res if p in matrix_data]
-        for p_me in players_in_game:
-            for p_enemy in players_in_game:
-                if p_me != p_enemy:
-                    matrix_data[p_me][p_enemy] += p_res[p_me] - p_res[p_enemy]
-    df_matrix = pd.DataFrame(matrix_data).T
+    df_m = df_results[df_results["name"].isin(real_members)][["game_id", "name", "pt"]]
+    df_pairs = (
+        df_m.merge(df_m, on="game_id", suffixes=("_me", "_enemy"))
+        .query("name_me != name_enemy")
+        .assign(diff=lambda d: d["pt_me"] - d["pt_enemy"])
+    )
+    df_matrix = (
+        df_pairs.groupby(["name_me", "name_enemy"])["diff"].sum()
+        .unstack(fill_value=0)
+        .reindex(index=real_members, columns=real_members, fill_value=0)
+    )
     default_matrix = real_members[:5] if len(real_members) >= 5 else real_members
     target = st.multiselect("分析対象", options=real_members,
                             default=default_matrix, key="matrix_sel")
@@ -1114,24 +1127,20 @@ def show_stats():
 
     # 整形テーブル：順位順に並び替えて1行1試合で表示
     history_rows = []
-    for _, row in df_games.sort_values("game_id", ascending=False).iterrows():
-        players = sorted(
-            [(row[f'p{i}_rank'], row[f'p{i}_name'], row[f'p{i}_score'],
-              calc.calc_special_point(row[f'p{i}_score'], row[f'p{i}_rank']))
-             for i in range(1, 5)],
-            key=lambda x: x[0]
-        )
-        d = row['date']
-        date_str = d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明"
+    for gid, g in df_results.groupby("game_id"):
+        g_sorted = g.sort_values("rank").reset_index(drop=True)
+        if len(g_sorted) < 4:
+            continue
+        d = g_sorted.iloc[0]["date"]
         history_rows.append({
-            "#": int(row['game_id']),
-            "日付": date_str,
-            "1位": f"{players[0][1]} ({players[0][3]:+.1f})",
-            "2位": f"{players[1][1]} ({players[1][3]:+.1f})",
-            "3位": f"{players[2][1]} ({players[2][3]:+.1f})",
-            "4位": f"{players[3][1]} ({players[3][3]:+.1f})",
+            "#": int(gid),
+            "日付": d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明",
+            "1位": f"{g_sorted.iloc[0]['name']} ({g_sorted.iloc[0]['pt']:+.1f})",
+            "2位": f"{g_sorted.iloc[1]['name']} ({g_sorted.iloc[1]['pt']:+.1f})",
+            "3位": f"{g_sorted.iloc[2]['name']} ({g_sorted.iloc[2]['pt']:+.1f})",
+            "4位": f"{g_sorted.iloc[3]['name']} ({g_sorted.iloc[3]['pt']:+.1f})",
         })
-    df_history = pd.DataFrame(history_rows)
+    df_history = pd.DataFrame(sorted(history_rows, key=lambda r: r["#"], reverse=True))
     st.dataframe(df_history, use_container_width=True, hide_index=True)
 
     # ── 複数試合の合計集計 ────────────────────────────────
@@ -1145,18 +1154,15 @@ def show_stats():
         key="agg_game_ids",
     )
     if selected_ids:
-        agg: dict = {}
-        counts: dict = {}
-        for _, row in df_games[df_games["game_id"].isin(selected_ids)].iterrows():
-            for i in range(1, 5):
-                name = row[f'p{i}_name']
-                pt = calc.calc_special_point(row[f'p{i}_score'], row[f'p{i}_rank'])
-                agg[name] = agg.get(name, 0.0) + pt
-                counts[name] = counts.get(name, 0) + 1
-        df_agg = pd.DataFrame([
-            {"名前": name, "合計pt": f"{agg[name]:+.1f}", "参加試合数": counts[name]}
-            for name in sorted(agg, key=lambda n: agg[n], reverse=True)
-        ])
+        df_sel = df_results[df_results["game_id"].isin(selected_ids)]
+        df_agg = (
+            df_sel.groupby("name")
+            .agg(合計pt=("pt", "sum"), 参加試合数=("game_id", "count"))
+            .reset_index()
+            .rename(columns={"name": "名前"})
+            .sort_values("合計pt", ascending=False)
+        )
+        df_agg["合計pt"] = df_agg["合計pt"].apply(lambda x: f"{x:+.1f}")
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
@@ -1170,11 +1176,12 @@ def show_stats():
 def show_data_manage():
     st.title("データ管理")
 
-    pending = db.get_pending_count()
-    if not st.session_state.get("online", True):
-        st.warning(f"オフラインモード。未同期の試合: {pending}件")
-    elif pending > 0:
-        st.info(f"未同期の試合が {pending}件 あります。")
+    if db.IS_LOCAL:
+        pending = db.get_pending_count()
+        if not st.session_state.get("online", True):
+            st.warning(f"オフラインモード。未同期の試合: {pending}件")
+        elif pending > 0:
+            st.info(f"未同期の試合が {pending}件 あります。")
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除", "同期"])
 
@@ -1290,23 +1297,26 @@ def show_data_manage():
 
     with tab5:
         st.subheader("Supabaseへの同期")
-        pending_now = db.get_pending_count()
-        if pending_now == 0:
-            st.success("未同期のデータはありません。")
+        if not db.IS_LOCAL:
+            st.info("同期機能はローカル起動時のみ使用できます。")
         else:
-            st.warning(f"未同期の試合: {pending_now}件")
-            if st.session_state.get("online", True):
-                if st.button("今すぐ同期する", type="primary", use_container_width=True):
-                    try:
-                        n = db.sync_to_supabase()
-                        db.get_games_data.clear()
-                        db.get_rounds_data.clear()
-                        st.success(f"{n}件の試合をSupabaseに同期しました。")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"同期に失敗しました: {e}")
+            pending_now = db.get_pending_count()
+            if pending_now == 0:
+                st.success("未同期のデータはありません。")
             else:
-                st.info("オンラインになってから同期してください。")
+                st.warning(f"未同期の試合: {pending_now}件")
+                if st.session_state.get("online", True):
+                    if st.button("今すぐ同期する", type="primary", use_container_width=True):
+                        try:
+                            n = db.sync_to_supabase()
+                            db.get_games_data.clear()
+                            db.get_rounds_data.clear()
+                            st.success(f"{n}件の試合をSupabaseに同期しました。")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"同期に失敗しました: {e}")
+                else:
+                    st.info("オンラインになってから同期してください。")
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"

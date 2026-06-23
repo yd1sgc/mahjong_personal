@@ -4,7 +4,8 @@ import psycopg2
 import pandas as pd
 import streamlit as st
 
-SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db"
+IS_LOCAL = st.secrets.get("local_mode", False)
+SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if IS_LOCAL else None
 
 
 def get_local_connection():
@@ -12,6 +13,8 @@ def get_local_connection():
 
 
 def get_local_unsynced_games():
+    if not IS_LOCAL:
+        return pd.DataFrame()
     try:
         if not os.path.exists(SQLITE_PATH):
             return pd.DataFrame()
@@ -24,6 +27,8 @@ def get_local_unsynced_games():
 
 
 def init_local_db():
+    if not IS_LOCAL:
+        return
     os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
     conn = get_local_connection()
     c = conn.cursor()
@@ -113,6 +118,8 @@ def save_round_local(game_id, kyoku_name, winner, loser, score, furo, riichi, wi
 
 
 def get_pending_count():
+    if not IS_LOCAL:
+        return 0
     conn = get_local_connection()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM games WHERE is_synced = 0")
@@ -122,6 +129,8 @@ def get_pending_count():
 
 
 def sync_to_supabase():
+    if not IS_LOCAL:
+        return 0
     local_conn = get_local_connection()
     lc = local_conn.cursor()
     lc.execute("SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id")
