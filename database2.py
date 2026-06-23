@@ -132,56 +132,63 @@ def sync_to_supabase():
     if not IS_LOCAL:
         return 0
     local_conn = get_local_connection()
-    lc = local_conn.cursor()
-    lc.execute("SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id")
-    games = lc.fetchall()
+    remote_conn = None
+    try:
+        lc = local_conn.cursor()
+        lc.execute("SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id")
+        games = lc.fetchall()
 
-    if not games:
-        local_conn.close()
-        return 0
+        if not games:
+            return 0
 
-    remote_conn = get_connection()
-    rc = remote_conn.cursor()
-    rc.execute("SELECT COALESCE(MAX(game_id), 0) FROM games")
-    max_remote_id = rc.fetchone()[0]
+        remote_conn = get_connection()
+        rc = remote_conn.cursor()
+        rc.execute("SELECT COALESCE(MAX(game_id), 0) FROM games")
+        max_remote_id = rc.fetchone()[0]
 
-    synced_count = 0
-    for game in games:
-        local_game_id = game[0]
-        max_remote_id += 1
-        new_game_id = max_remote_id
+        synced_count = 0
+        for game in games:
+            local_game_id = game[0]
+            max_remote_id += 1
+            new_game_id = max_remote_id
 
-        rc.execute('''INSERT INTO games (game_id, date,
-            p1_name, p1_score, p1_rank,
-            p2_name, p2_score, p2_rank,
-            p3_name, p3_score, p3_rank,
-            p4_name, p4_score, p4_rank
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
-            new_game_id, game[1],
-            game[2], game[3], game[4],
-            game[5], game[6], game[7],
-            game[8], game[9], game[10],
-            game[11], game[12], game[13]
-        ))
-
-        lc.execute("SELECT * FROM rounds WHERE game_id=? AND is_synced=0", (local_game_id,))
-        for r in lc.fetchall():
-            rc.execute('''INSERT INTO rounds (
-                game_id, kyoku_name, winner, loser, score,
-                furo_names, riichi_names, riichi_count, tenpai_names, win_type
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
-                new_game_id, r[2], r[3], r[4], r[5],
-                r[6], r[7], r[8], r[9], r[10]
+            rc.execute('''INSERT INTO games (game_id, date,
+                p1_name, p1_score, p1_rank,
+                p2_name, p2_score, p2_rank,
+                p3_name, p3_score, p3_rank,
+                p4_name, p4_score, p4_rank
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
+                new_game_id, game[1],
+                game[2], game[3], game[4],
+                game[5], game[6], game[7],
+                game[8], game[9], game[10],
+                game[11], game[12], game[13]
             ))
-        lc.execute("UPDATE rounds SET is_synced=1 WHERE game_id=?", (local_game_id,))
-        lc.execute("UPDATE games SET is_synced=1 WHERE game_id=?", (local_game_id,))
-        synced_count += 1
 
-    remote_conn.commit()
-    remote_conn.close()
-    local_conn.commit()
-    local_conn.close()
-    return synced_count
+            lc.execute("SELECT * FROM rounds WHERE game_id=? AND is_synced=0", (local_game_id,))
+            for r in lc.fetchall():
+                rc.execute('''INSERT INTO rounds (
+                    game_id, kyoku_name, winner, loser, score,
+                    furo_names, riichi_names, riichi_count, tenpai_names, win_type
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
+                    new_game_id, r[2], r[3], r[4], r[5],
+                    r[6], r[7], r[8], r[9], r[10]
+                ))
+            lc.execute("UPDATE rounds SET is_synced=1 WHERE game_id=?", (local_game_id,))
+            lc.execute("UPDATE games SET is_synced=1 WHERE game_id=?", (local_game_id,))
+            synced_count += 1
+
+        remote_conn.commit()
+        local_conn.commit()
+        return synced_count
+    except Exception:
+        if remote_conn:
+            remote_conn.rollback()
+        raise
+    finally:
+        if remote_conn:
+            remote_conn.close()
+        local_conn.close()
 
 
 def get_connection():
