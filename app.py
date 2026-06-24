@@ -53,6 +53,15 @@ st.markdown("""
     flex: 1 !important;
     min-height: 44px;
 }
+/* トップパディング削減 */
+.block-container {
+    padding-top: 1rem !important;
+}
+/* divider の余白削減 */
+hr {
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+}
 /* スマホ: パディング削減 */
 @media (max-width: 640px) {
     .block-container {
@@ -565,8 +574,6 @@ def show_game():
         f"<br><small style='color:{diff_color};'>{diff_text}</small>",
         unsafe_allow_html=True,
     )
-
-    st.divider()
 
     # プレイヤーカード
     for p in players:
