@@ -56,19 +56,19 @@ class TestCalculateScore:
 
 
 class TestCalcSpecialPoint:
-    """ウマ・オカ計算のテスト（RETURN_POINT=30000, UMA={1:30, 2:5, 3:-5, 4:-10}）"""
+    """ウマ・オカ計算のテスト（RETURN_POINT=30000, UMA={1:50, 2:10, 3:-10, 4:-30}）"""
 
     def test_rank1_at_return_point(self):
-        # (30000-30000)/1000 + 30 = 30.0
-        assert calc_special_point(30000, 1) == 30.0
+        # (30000-30000)/1000 + 50 = 50.0
+        assert calc_special_point(30000, 1) == 50.0
 
     def test_rank4_below_return_point(self):
-        # (20000-30000)/1000 + (-10) = -20.0
-        assert calc_special_point(20000, 4) == -20.0
+        # (20000-30000)/1000 + (-30) = -40.0
+        assert calc_special_point(20000, 4) == -40.0
 
     def test_rank2_above_return_point(self):
-        # (35000-30000)/1000 + 5 = 10.0
-        assert calc_special_point(35000, 2) == 10.0
+        # (35000-30000)/1000 + 10 = 15.0
+        assert calc_special_point(35000, 2) == 15.0
 
     def test_zero_sum_4players(self):
         # 4人の点数合計=100000 のとき、ポイント合計は必ず0になる
@@ -82,16 +82,16 @@ class TestCalcOkaNashiPoint:
     """オカなし計算のテスト（INIT_SCORE=25000, RETURN_POINT=30000）"""
 
     def test_rank1_at_init_score(self):
-        # oka=20, base_pt=0, uma_pt=30-20=10 → 10.0
-        assert calc_oka_nashi_point(25000, 1) == 10.0
+        # oka=20, base_pt=0, uma_pt=50-20=30 → 30.0
+        assert calc_oka_nashi_point(25000, 1) == 30.0
 
     def test_rank2_at_init_score(self):
-        # base_pt=0, uma_pt=5 → 5.0
-        assert calc_oka_nashi_point(25000, 2) == 5.0
+        # base_pt=0, uma_pt=10 → 10.0
+        assert calc_oka_nashi_point(25000, 2) == 10.0
 
     def test_rank3_above_init_score(self):
-        # (30000-25000)/1000 + (-5) = 5 - 5 = 0.0
-        assert calc_oka_nashi_point(30000, 3) == 0.0
+        # (30000-25000)/1000 + (-10) = 5 - 10 = -5.0
+        assert calc_oka_nashi_point(30000, 3) == -5.0
 
     def test_zero_sum_4players(self):
         # 4人の点数合計=100000 のとき、オカなしでもポイント合計は0になる
