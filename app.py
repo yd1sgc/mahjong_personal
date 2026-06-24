@@ -184,9 +184,7 @@ HOUSE_RULES = {
 def _show_rules_expander():
     with st.expander("ルール確認"):
         for category, rules in HOUSE_RULES.items():
-            st.markdown(f"**{category}**")
-            for rule in rules:
-                st.markdown(f"- {rule}")
+            st.markdown(f"**{category}**  \n" + "  \n".join(rules))
 
 
 # ── セッション初期化 ───────────────────────────────────────
