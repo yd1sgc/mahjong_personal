@@ -637,21 +637,24 @@ def show_game():
             st.session_state.tenpai_selection = list(riichi_declared)
             st.rerun()
 
-    c3, c4, c5 = st.columns(3)
-    with c3:
-        if st.button("チョンボ", use_container_width=True):
-            st.session_state.input_mode = "chombo"
-            st.rerun()
-    with c4:
-        if st.button("局を修正", use_container_width=True):
-            st.session_state.input_mode = "edit_history"
-            st.rerun()
-    with c5:
-        if st.button("↩ 元に戻す",
-                     disabled=not st.session_state.undo_stack,
-                     use_container_width=True):
-            undo_last()
-            st.rerun()
+    st.divider()
+
+    if st.button("↩ 元に戻す",
+                 disabled=not st.session_state.undo_stack,
+                 use_container_width=True):
+        undo_last()
+        st.rerun()
+
+    with st.expander("その他の操作"):
+        c3, c4 = st.columns(2)
+        with c3:
+            if st.button("チョンボ", use_container_width=True):
+                st.session_state.input_mode = "chombo"
+                st.rerun()
+        with c4:
+            if st.button("局を修正", use_container_width=True):
+                st.session_state.input_mode = "edit_history"
+                st.rerun()
 
     _show_rules_expander()
 
