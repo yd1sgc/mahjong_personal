@@ -55,7 +55,7 @@ st.markdown("""
 }
 /* トップパディング削減 */
 .block-container {
-    padding-top: 1rem !important;
+    padding-top: 2.5rem !important;
 }
 /* divider の余白削減 */
 hr {
