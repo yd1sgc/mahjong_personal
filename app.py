@@ -208,12 +208,14 @@ def init_session():
             st.session_state[k] = v
 
 init_session()
-db.init_db()
-if db.IS_LOCAL:
-    db.init_local_db()
-    if "online" not in st.session_state:
-        db.check_connectivity()
-else:
+if "db_initialized" not in st.session_state:
+    db.init_db()
+    if db.IS_LOCAL:
+        db.init_local_db()
+    st.session_state["db_initialized"] = True
+if db.IS_LOCAL and "online" not in st.session_state:
+    db.check_connectivity()
+if not db.IS_LOCAL:
     st.session_state["online"] = True
 
 
