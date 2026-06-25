@@ -256,7 +256,7 @@ def save_snapshot():
         "round_history": list(st.session_state.round_history),
     }
     st.session_state.undo_stack.append(snap)
-    if len(st.session_state.undo_stack) > 20:
+    if len(st.session_state.undo_stack) > 80:
         st.session_state.undo_stack.pop(0)
 
 def undo_last():
@@ -407,6 +407,7 @@ def autosave_draft():
         "riichi_declared": list(st.session_state.riichi_declared),
         "furo_declared": list(st.session_state.furo_declared),
         "round_history": list(st.session_state.round_history),
+        "undo_stack": list(st.session_state.undo_stack[-3:]),
         "game_mode": st.session_state.game_mode,
         "input_mode": "normal",
     }
