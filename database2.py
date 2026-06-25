@@ -440,8 +440,9 @@ def delete_draft():
         with _remote_db() as conn:
             c = conn.cursor()
             c.execute("DELETE FROM drafts WHERE id = 'current'")
+        return True
     except Exception:
-        pass
+        return False
 
 
 def import_games_from_df(df):

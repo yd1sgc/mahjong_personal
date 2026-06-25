@@ -212,6 +212,7 @@ def init_session():
         "selected_players": [],
         "game_mode": "detail",
         "confirm_endgame": False,
+        "confirm_discard": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -420,7 +421,7 @@ def reset_game():
         "game_active", "players", "scores", "round_idx", "honba",
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",
         "input_mode", "win_step", "win_data", "undo_stack", "round_history",
-        "selected_players", "tenpai_selection", "confirm_endgame", "draft_save_error",
+        "selected_players", "tenpai_selection", "confirm_endgame", "confirm_discard", "draft_save_error",
     ]
     for k in keys:
         if k in st.session_state:
@@ -442,11 +443,13 @@ def show_setup():
                 for k, v in draft.items():
                     st.session_state[k] = v
                 st.session_state["draft_data"] = None
+                st.session_state["draft_time"] = None
                 st.rerun()
         with cd:
             if st.button("破棄する", use_container_width=True, key="draft_discard"):
                 db.delete_draft()
                 st.session_state["draft_data"] = None
+                st.session_state["draft_time"] = None
                 st.rerun()
         st.divider()
 
@@ -1036,15 +1039,29 @@ def show_endgame():
             st.session_state.last_result = {"game_id": game_id, "date": date_str, "rows": result_rows}
             db.delete_draft()
             st.session_state.pop("draft_data", None)
+            st.session_state.pop("draft_time", None)
             reset_game()
             st.session_state.view = "result"
             st.rerun()
     with c2:
         if st.button("記録せず終了", use_container_width=True):
-            db.delete_draft()
-            st.session_state.pop("draft_data", None)
-            reset_game()
+            st.session_state["confirm_discard"] = True
             st.rerun()
+
+    if st.session_state.get("confirm_discard"):
+        st.warning("本当に終了しますか？下書きも削除されます。")
+        cy, cn = st.columns(2)
+        with cy:
+            if st.button("削除して終了", type="primary", use_container_width=True):
+                db.delete_draft()
+                st.session_state.pop("draft_data", None)
+                st.session_state.pop("draft_time", None)
+                reset_game()
+                st.rerun()
+        with cn:
+            if st.button("キャンセル", use_container_width=True):
+                st.session_state["confirm_discard"] = False
+                st.rerun()
 
     if st.button("戻る（対局続行）", use_container_width=True):
         st.session_state.input_mode = "normal"
