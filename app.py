@@ -228,6 +228,11 @@ if db.IS_LOCAL and "online" not in st.session_state:
 if not db.IS_LOCAL:
     st.session_state["online"] = True
 
+if "draft_data" not in st.session_state:
+    draft_state, draft_time = db.load_draft()
+    st.session_state["draft_data"] = draft_state
+    st.session_state["draft_time"] = draft_time
+
 
 # ── ゲームロジック ────────────────────────────────────────
 
@@ -265,6 +270,7 @@ def undo_last():
     st.session_state.furo_declared = snap["furo_declared"]
     st.session_state.round_history = snap["round_history"]
     st.session_state.diff_target = None
+    autosave_draft()
     return True
 
 def record_round(winner, loser, win_type, score, tenpai=None):
@@ -285,6 +291,7 @@ def declare_riichi(player):
     st.session_state.riichi_stick += 1
     if player not in st.session_state.riichi_declared:
         st.session_state.riichi_declared.append(player)
+    autosave_draft()
 
 def end_round(dealer_continues):
     if dealer_continues:
@@ -329,6 +336,7 @@ def apply_win(winner, win_type, points_data, loser=None):
     record_round(winner, loser, win_type, points_data.get("total", 0))
     st.session_state.riichi_stick = 0
     end_round(dealer_continues=is_dealer)
+    autosave_draft()
 
 def apply_ryukyoku(tenpai_players):
     save_snapshot()
@@ -353,6 +361,7 @@ def apply_ryukyoku(tenpai_players):
     st.session_state.riichi_declared = []
     st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
+    autosave_draft()
 
 def apply_chombo(player):
     save_snapshot()
@@ -380,6 +389,30 @@ def apply_chombo(player):
 
     record_round(player, None, "chombo", 0)
     st.session_state.input_mode = "normal"
+    autosave_draft()
+
+
+def autosave_draft():
+    if st.session_state.get("game_mode") != "detail":
+        return
+    state = {
+        "view": st.session_state.get("view", "setup"),
+        "game_active": True,
+        "players": list(st.session_state.players),
+        "scores": dict(st.session_state.scores),
+        "round_idx": st.session_state.round_idx,
+        "honba": st.session_state.honba,
+        "riichi_stick": st.session_state.riichi_stick,
+        "riichi_declared": list(st.session_state.riichi_declared),
+        "furo_declared": list(st.session_state.furo_declared),
+        "round_history": list(st.session_state.round_history),
+        "game_mode": st.session_state.game_mode,
+        "input_mode": "normal",
+    }
+    try:
+        db.save_draft(state)
+    except Exception as e:
+        st.session_state["draft_save_error"] = str(e)
 
 
 def reset_game():
@@ -387,7 +420,7 @@ def reset_game():
         "game_active", "players", "scores", "round_idx", "honba",
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",
         "input_mode", "win_step", "win_data", "undo_stack", "round_history",
-        "selected_players", "tenpai_selection", "confirm_endgame",
+        "selected_players", "tenpai_selection", "confirm_endgame", "draft_save_error",
     ]
     for k in keys:
         if k in st.session_state:
@@ -398,6 +431,25 @@ def reset_game():
 # ── 画面: 対局設定 ────────────────────────────────────────
 
 def show_setup():
+    draft = st.session_state.get("draft_data")
+    if draft and draft.get("game_active") and draft.get("game_mode") == "detail":
+        draft_time = st.session_state.get("draft_time")
+        time_str = draft_time.strftime("%m/%d %H:%M") if draft_time else "不明"
+        st.warning(f"{time_str} の対局が中断されています。再開しますか？")
+        cr, cd = st.columns(2)
+        with cr:
+            if st.button("再開する", type="primary", use_container_width=True, key="draft_resume"):
+                for k, v in draft.items():
+                    st.session_state[k] = v
+                st.session_state["draft_data"] = None
+                st.rerun()
+        with cd:
+            if st.button("破棄する", use_container_width=True, key="draft_discard"):
+                db.delete_draft()
+                st.session_state["draft_data"] = None
+                st.rerun()
+        st.divider()
+
     st.markdown("### 麻雀スコア")
 
     selected = st.session_state.selected_players
@@ -458,6 +510,7 @@ def show_setup():
             st.session_state.game_active = True
             st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
+            autosave_draft()
             st.rerun()
     with c2:
         if st.button("結果のみ", disabled=not ready, use_container_width=True):
@@ -564,6 +617,10 @@ def show_game():
     riichi_declared = st.session_state.riichi_declared
     furo_declared = st.session_state.furo_declared
     dealer = get_dealer()
+
+    if st.session_state.get("draft_save_error"):
+        st.caption("下書き保存失敗（通信エラー）")
+        st.session_state.pop("draft_save_error", None)
 
     # ヘッダー（1行でコンパクトに）
     kyoku_str = f"{get_round_name()} {st.session_state.honba}本場"
@@ -920,6 +977,7 @@ def show_edit_history():
                 })
             st.session_state.round_history = new_history
             st.session_state.input_mode = "normal"
+            autosave_draft()
             st.rerun()
     with c2:
         if st.button("キャンセル", use_container_width=True):
@@ -976,11 +1034,15 @@ def show_endgame():
                 for i, p in enumerate(sorted_p)
             ]
             st.session_state.last_result = {"game_id": game_id, "date": date_str, "rows": result_rows}
+            db.delete_draft()
+            st.session_state.pop("draft_data", None)
             reset_game()
             st.session_state.view = "result"
             st.rerun()
     with c2:
         if st.button("記録せず終了", use_container_width=True):
+            db.delete_draft()
+            st.session_state.pop("draft_data", None)
             reset_game()
             st.rerun()
 

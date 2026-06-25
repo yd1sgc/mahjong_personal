@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import psycopg2
@@ -267,6 +268,11 @@ def init_db():
         )''')
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS tenpai_names TEXT DEFAULT ''")
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS win_type TEXT DEFAULT ''")
+        c.execute('''CREATE TABLE IF NOT EXISTS drafts (
+            id TEXT PRIMARY KEY,
+            state_json JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )''')
 
 
 def save_game(date_str, scores, players):
@@ -402,6 +408,40 @@ def delete_game(game_id):
         c = conn.cursor()
         c.execute("DELETE FROM games WHERE game_id=%s", (game_id,))
         c.execute("DELETE FROM rounds WHERE game_id=%s", (game_id,))
+
+
+def save_draft(state_dict):
+    with _remote_db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO drafts (id, state_json, updated_at)
+            VALUES ('current', %s::jsonb, now())
+            ON CONFLICT (id)
+            DO UPDATE SET state_json = EXCLUDED.state_json, updated_at = now()
+        """, (json.dumps(state_dict, ensure_ascii=False),))
+
+
+def load_draft():
+    try:
+        with _remote_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT state_json, updated_at FROM drafts WHERE id = 'current'")
+            row = c.fetchone()
+            if row:
+                state = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                return state, row[1]
+        return None, None
+    except Exception:
+        return None, None
+
+
+def delete_draft():
+    try:
+        with _remote_db() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM drafts WHERE id = 'current'")
+    except Exception:
+        pass
 
 
 def import_games_from_df(df):
