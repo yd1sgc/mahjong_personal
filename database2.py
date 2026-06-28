@@ -1,9 +1,11 @@
+import json
 import os
 import sqlite3
 import psycopg2
 import pandas as pd
 import streamlit as st
 from contextlib import contextmanager
+from datetime import datetime
 
 IS_LOCAL = st.secrets.get("local_mode", False)
 SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if IS_LOCAL else None
@@ -112,6 +114,11 @@ def init_local_db():
             tenpai_names TEXT DEFAULT '',
             win_type TEXT DEFAULT '',
             is_synced INTEGER DEFAULT 0
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS drafts (
+            id TEXT PRIMARY KEY,
+            state_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         )''')
 
 
@@ -267,6 +274,11 @@ def init_db():
         )''')
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS tenpai_names TEXT DEFAULT ''")
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS win_type TEXT DEFAULT ''")
+        c.execute('''CREATE TABLE IF NOT EXISTS drafts (
+            id TEXT PRIMARY KEY,
+            state_json JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )''')
 
 
 def save_game(date_str, scores, players):
@@ -402,6 +414,66 @@ def delete_game(game_id):
         c = conn.cursor()
         c.execute("DELETE FROM games WHERE game_id=%s", (game_id,))
         c.execute("DELETE FROM rounds WHERE game_id=%s", (game_id,))
+
+
+def save_draft(state_dict):
+    if IS_LOCAL:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO drafts (id, state_json, updated_at)
+                VALUES ('current', ?, datetime('now', 'localtime'))
+                ON CONFLICT (id)
+                DO UPDATE SET state_json = excluded.state_json, updated_at = datetime('now', 'localtime')
+            """, (json.dumps(state_dict, ensure_ascii=False),))
+    else:
+        with _remote_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO drafts (id, state_json, updated_at)
+                VALUES ('current', %s::jsonb, now())
+                ON CONFLICT (id)
+                DO UPDATE SET state_json = EXCLUDED.state_json, updated_at = now()
+            """, (json.dumps(state_dict, ensure_ascii=False),))
+
+
+def load_draft():
+    try:
+        if IS_LOCAL:
+            with _local_db() as conn:
+                c = conn.cursor()
+                c.execute("SELECT state_json, updated_at FROM drafts WHERE id = 'current'")
+                row = c.fetchone()
+                if row:
+                    state = json.loads(row[0])
+                    updated_at = datetime.fromisoformat(row[1])
+                    return state, updated_at
+        else:
+            with _remote_db() as conn:
+                c = conn.cursor()
+                c.execute("SELECT state_json, updated_at FROM drafts WHERE id = 'current'")
+                row = c.fetchone()
+                if row:
+                    state = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    return state, row[1]
+        return None, None
+    except Exception:
+        return None, None
+
+
+def delete_draft():
+    try:
+        if IS_LOCAL:
+            with _local_db() as conn:
+                c = conn.cursor()
+                c.execute("DELETE FROM drafts WHERE id = 'current'")
+        else:
+            with _remote_db() as conn:
+                c = conn.cursor()
+                c.execute("DELETE FROM drafts WHERE id = 'current'")
+        return True
+    except Exception:
+        return False
 
 
 def import_games_from_df(df):
