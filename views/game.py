@@ -235,17 +235,22 @@ def show_win_input():
             han = st.number_input("翻", min_value=1, max_value=13, value=3, key="han_in")
             fu = st.selectbox("符", [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110],
                               index=2, key="fu_in")
+            _total, _oya_p, _ko_p = calc.calculate_score(han, fu, is_dealer, win_type == "tsumo")
+            if win_type == "ron":
+                st.info(f"{_total:,}点")
+            elif is_dealer:
+                st.info(f"{_ko_p:,}点オール")
+            else:
+                st.info(f"子{_ko_p:,}点 / 親{_oya_p:,}点")
             if st.button("この点数で使う", key="calc_apply"):
-                total, oya_p, ko_p = calc.calculate_score(han, fu, is_dealer,
-                                                           win_type == "tsumo")
                 if win_type == "ron":
-                    data["points_data"] = {"total": total}
+                    data["points_data"] = {"total": _total}
                     st.session_state.win_step = 3
                 else:
                     if is_dealer:
-                        pd_ = {"each_pays": ko_p, "total": total}
+                        pd_ = {"each_pays": _ko_p, "total": _total}
                     else:
-                        pd_ = {"ko_pays": ko_p, "oya_pays": oya_p, "total": total}
+                        pd_ = {"ko_pays": _ko_p, "oya_pays": _oya_p, "total": _total}
                     game_logic.apply_win(data["winner"], "tsumo", pd_)
                 st.rerun()
 
