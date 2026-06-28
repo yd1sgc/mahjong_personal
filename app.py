@@ -138,9 +138,10 @@ def init_session():
 init_session()
 
 if "db_initialized" not in st.session_state:
-    db.init_db()
     if db.IS_LOCAL:
         db.init_local_db()
+    else:
+        db.init_db()
     st.session_state["db_initialized"] = True
 
 if db.IS_LOCAL and "online" not in st.session_state:
