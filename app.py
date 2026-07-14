@@ -110,7 +110,7 @@ hr {
 
 def init_session():
     defaults = {
-        "view": "setup",
+        "view": "setup" if db.IS_LOCAL else "stats",
         "game_active": False,
         "players": [],
         "scores": {},
@@ -155,6 +155,22 @@ if "draft_data" not in st.session_state:
     st.session_state["draft_time"] = draft_time
 
 
+# ── 認証 ───────────────────────────────────────────────────
+
+def check_auth():
+    if db.IS_LOCAL or st.session_state.get("authed"):
+        return True
+    st.title("麻雀スコア")
+    pw = st.text_input("パスワード", type="password")
+    if pw:
+        if pw == st.secrets.get("app_password"):
+            st.session_state["authed"] = True
+            st.rerun()
+        else:
+            st.error("パスワードが違います")
+    return False
+
+
 # ── ルーター ──────────────────────────────────────────────
 
 view = st.session_state.view
@@ -162,6 +178,8 @@ mode = st.session_state.input_mode
 
 if view == "stats":
     show_stats()
+elif not check_auth():
+    pass
 elif view == "result":
     show_result()
 elif view == "data_manage":
