@@ -38,7 +38,8 @@ def get_connection():
         port=int(db["port"]),
         user=db["user"],
         password=db["password"],
-        dbname=db["dbname"]
+        dbname=db["dbname"],
+        connect_timeout=3
     )
 
 
@@ -346,6 +347,9 @@ def get_rounds_data():
 
 
 def load_all_games():
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM games")
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM games")
 
@@ -370,6 +374,9 @@ def save_all_games(df):
 
 
 def load_all_rounds():
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM rounds")
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM rounds")
 
@@ -490,6 +497,7 @@ def delete_draft():
         return False
 
 
+@st.cache_data(ttl=300)
 def load_rounds_by_game(game_id):
     if IS_LOCAL:
         with _local_db() as conn:

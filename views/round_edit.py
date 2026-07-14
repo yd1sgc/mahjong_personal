@@ -259,6 +259,7 @@ def show_round_edit():
                     db.update_game_scores(preview['game_id'], preview['new_game_scores'])
                 db.get_games_data.clear()
                 db.get_rounds_data.clear()
+                db.load_rounds_by_game.clear()
                 del st.session_state['re_preview']
                 st.success("保存しました。")
                 st.rerun()
