@@ -325,8 +325,12 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
 
 @st.cache_data(ttl=300)
 def get_games_data(year_filter=None):
-    with _remote_db() as conn:
-        df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
+    if IS_LOCAL:
+        with _local_db() as conn:
+            df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
+    else:
+        with _remote_db() as conn:
+            df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
     if df.empty:
         return df
 
@@ -342,6 +346,9 @@ def get_games_data(year_filter=None):
 
 @st.cache_data(ttl=300)
 def get_rounds_data():
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM rounds")
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM rounds")
 
@@ -431,6 +438,12 @@ def update_game_scores(game_id, scores_dict):
 
 
 def delete_game(game_id):
+    if IS_LOCAL:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM games WHERE game_id=?", (game_id,))
+            c.execute("DELETE FROM rounds WHERE game_id=?", (game_id,))
+        return
     with _remote_db() as conn:
         c = conn.cursor()
         c.execute("DELETE FROM games WHERE game_id=%s", (game_id,))
