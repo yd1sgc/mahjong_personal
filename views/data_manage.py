@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import database2 as db
+from views.round_edit import show_round_edit
 
 
 def show_data_manage():
@@ -13,7 +14,7 @@ def show_data_manage():
         elif pending > 0:
             st.info(f"未同期の試合が {pending}件 あります。")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除", "同期"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除", "同期", "局修正"])
 
     with tab1:
         st.subheader("CSVエクスポート")
@@ -147,6 +148,9 @@ def show_data_manage():
                             st.error(f"同期に失敗しました: {e}")
                 else:
                     st.info("オンラインになってから同期してください。")
+
+    with tab6:
+        show_round_edit()
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"

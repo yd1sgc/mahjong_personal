@@ -38,7 +38,8 @@ def get_connection():
         port=int(db["port"]),
         user=db["user"],
         password=db["password"],
-        dbname=db["dbname"]
+        dbname=db["dbname"],
+        connect_timeout=3
     )
 
 
@@ -346,6 +347,9 @@ def get_rounds_data():
 
 
 def load_all_games():
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM games")
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM games")
 
@@ -370,6 +374,9 @@ def save_all_games(df):
 
 
 def load_all_rounds():
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM rounds")
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM rounds")
 
@@ -395,6 +402,20 @@ def save_all_rounds(df):
 def update_game_scores(game_id, scores_dict):
     sorted_p = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
     name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
+    if IS_LOCAL:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=?", (game_id,))
+            row = c.fetchone()
+            if row:
+                for slot in range(1, 5):
+                    name = row[slot - 1]
+                    if name in scores_dict:
+                        c.execute(
+                            f"UPDATE games SET p{slot}_score=?, p{slot}_rank=? WHERE game_id=?",
+                            (scores_dict[name], name_to_rank[name], game_id)
+                        )
+        return
     with _remote_db() as conn:
         c = conn.cursor()
         c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=%s", (game_id,))
@@ -474,6 +495,32 @@ def delete_draft():
         return True
     except Exception:
         return False
+
+
+@st.cache_data(ttl=300)
+def load_rounds_by_game(game_id):
+    if IS_LOCAL:
+        with _local_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM rounds WHERE game_id=? ORDER BY id", (game_id,))
+    else:
+        with _remote_db() as conn:
+            return _fetch_df(conn, "SELECT * FROM rounds WHERE game_id=%s ORDER BY id", (game_id,))
+
+
+def update_round(round_id, fields):
+    """fields: dict of {column: value}"""
+    if IS_LOCAL:
+        with _local_db() as conn:
+            c = conn.cursor()
+            set_clause = ", ".join(f"{k}=?" for k in fields)
+            c.execute(f"UPDATE rounds SET {set_clause} WHERE id=?",
+                      list(fields.values()) + [round_id])
+    else:
+        with _remote_db() as conn:
+            c = conn.cursor()
+            set_clause = ", ".join(f"{k}=%s" for k in fields)
+            c.execute(f"UPDATE rounds SET {set_clause} WHERE id=%s",
+                      list(fields.values()) + [round_id])
 
 
 def import_games_from_df(df):
