@@ -430,20 +430,13 @@ def show_endgame():
             st.session_state.scores = scores
             st.session_state.riichi_stick = 0
             date_str = datetime.now().strftime("%Y-%m-%d")
-            if st.session_state.get("online", True):
-                game_id = db.save_game(date_str, scores, players)
-                for r in st.session_state.round_history:
-                    db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
-                                  r["score"], r["furo"], r["riichi"],
-                                  win_type=r.get("win_type", ""),
-                                  tenpai=r.get("tenpai", []))
-            else:
-                game_id = db.save_game_local(date_str, scores, players)
-                for r in st.session_state.round_history:
-                    db.save_round_local(game_id, r["kyoku_name"], r["winner"], r["loser"],
-                                        r["score"], r["furo"], r["riichi"],
-                                        win_type=r.get("win_type", ""),
-                                        tenpai=r.get("tenpai", []))
+            is_local_save = not st.session_state.get("online", True)
+            game_id = db.save_game(date_str, scores, players, local=is_local_save)
+            for r in st.session_state.round_history:
+                db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
+                              r["score"], r["furo"], r["riichi"],
+                              win_type=r.get("win_type", ""),
+                              tenpai=r.get("tenpai", []), local=is_local_save)
             db.get_games_data.clear()
             db.get_rounds_data.clear()
             result_rows = [

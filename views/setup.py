@@ -139,10 +139,8 @@ def show_simple_input():
                      use_container_width=True):
             sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
-            if st.session_state.get("online", True):
-                game_id = db.save_game(date_str, scores, players)
-            else:
-                game_id = db.save_game_local(date_str, scores, players)
+            is_local_save = not st.session_state.get("online", True)
+            game_id = db.save_game(date_str, scores, players, local=is_local_save)
             db.get_games_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],

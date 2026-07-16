@@ -134,49 +134,6 @@ def check_connectivity():
         return False
 
 
-def save_game_local(date_str, scores, players):
-    sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    with _local_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
-        next_id = c.fetchone()[0]
-        c.execute('''INSERT INTO games (game_id, date,
-            p1_name, p1_score, p1_rank,
-            p2_name, p2_score, p2_rank,
-            p3_name, p3_score, p3_rank,
-            p4_name, p4_score, p4_rank,
-            is_synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
-            next_id, date_str,
-            sorted_p[0][0], sorted_p[0][1], 1,
-            sorted_p[1][0], sorted_p[1][1], 2,
-            sorted_p[2][0], sorted_p[2][1], 3,
-            sorted_p[3][0], sorted_p[3][1], 4,
-            0
-        ))
-    return next_id
-
-
-def save_round_local(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None):
-    furo_str = ",".join(furo) if isinstance(furo, list) else ""
-    tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
-    if isinstance(riichi, list):
-        riichi_names_str = ",".join(riichi)
-        riichi_cnt = len(riichi)
-    else:
-        riichi_names_str = ""
-        riichi_cnt = int(riichi)
-    with _local_db() as conn:
-        c = conn.cursor()
-        c.execute('''INSERT INTO rounds (
-            game_id, kyoku_name, winner, loser, score,
-            furo_names, riichi_names, riichi_count, tenpai_names, win_type, is_synced
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (
-            game_id, kyoku_name, winner, loser, score,
-            furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, 0
-        ))
-
-
 def get_pending_count():
     if not IS_LOCAL:
         return 0
@@ -282,8 +239,28 @@ def init_db():
         )''')
 
 
-def save_game(date_str, scores, players):
+def save_game(date_str, scores, players, local=False):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    if local:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
+            next_id = c.fetchone()[0]
+            c.execute('''INSERT INTO games (game_id, date,
+                p1_name, p1_score, p1_rank,
+                p2_name, p2_score, p2_rank,
+                p3_name, p3_score, p3_rank,
+                p4_name, p4_score, p4_rank,
+                is_synced
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+                next_id, date_str,
+                sorted_p[0][0], sorted_p[0][1], 1,
+                sorted_p[1][0], sorted_p[1][1], 2,
+                sorted_p[2][0], sorted_p[2][1], 3,
+                sorted_p[3][0], sorted_p[3][1], 4,
+                0
+            ))
+        return next_id
     with _remote_db() as conn:
         c = conn.cursor()
         c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
@@ -303,7 +280,7 @@ def save_game(date_str, scores, players):
     return next_id
 
 
-def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None):
+def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None, local=False):
     furo_str = ",".join(furo) if isinstance(furo, list) else ""
     tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
     if isinstance(riichi, list):
@@ -312,6 +289,17 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
     else:
         riichi_names_str = ""
         riichi_cnt = int(riichi)
+    if local:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO rounds (
+                game_id, kyoku_name, winner, loser, score,
+                furo_names, riichi_names, riichi_count, tenpai_names, win_type, is_synced
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (
+                game_id, kyoku_name, winner, loser, score,
+                furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, 0
+            ))
+        return
     with _remote_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO rounds (
