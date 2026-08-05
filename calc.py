@@ -222,6 +222,7 @@ def analyze_stats(df_games, df_rounds):
         r_count = d["リーチ"]
         row = {
             "名前": n,
+            "局数": k,
             "和了率": round(d["和了"] / k * 100, 1),
             "放銃率": round(d["放銃"] / k * 100, 1),
             "副露率": round(d["副露"] / k * 100, 1),

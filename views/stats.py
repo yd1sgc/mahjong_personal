@@ -62,7 +62,7 @@ def show_stats():
     # ── 詳細成績テーブル ──────────────────────────────────
     if not round_stats.empty:
         st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
-        round_cols = ["名前", "和了率", "ツモ率", "放銃率", "副露率", "リーチ率",
+        round_cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "副露率", "リーチ率",
                       "リーチ成功率", "テンパイ率", "平均和了", "平均放銃"]
         show_cols = [c for c in round_cols if c in round_stats.columns]
         st.dataframe(
