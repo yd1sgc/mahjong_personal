@@ -134,7 +134,7 @@ def show_stats():
     # ── 相性マトリクス ────────────────────────────────────
     st.divider()
     st.subheader("相性マトリクス（直接対決）")
-    st.caption("行が自分、列が相手。数値は同卓時のpt差合計。赤=得意、青=苦手。")
+    st.caption("行: 自分 / 列: 相手（同卓時のpt差合計） 青: 得意 / 赤: 苦手")
     df_m = df_results[df_results["name"].isin(real_members)][["game_id", "name", "pt"]]
     df_pairs = (
         df_m.merge(df_m, on="game_id", suffixes=("_me", "_enemy"))
