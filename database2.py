@@ -206,6 +206,19 @@ def sync_to_supabase():
         local_conn.close()
 
 
+def mark_as_synced(game_id=None):
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        if game_id:
+            c.execute("UPDATE games SET is_synced = 1 WHERE game_id = ?", (game_id,))
+            c.execute("UPDATE rounds SET is_synced = 1 WHERE game_id = ?", (game_id,))
+        else:
+            c.execute("UPDATE games SET is_synced = 1")
+            c.execute("UPDATE rounds SET is_synced = 1")
+
+
 def init_db():
     with _remote_db() as conn:
         c = conn.cursor()

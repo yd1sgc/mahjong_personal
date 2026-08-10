@@ -136,18 +136,27 @@ def show_data_manage():
                 st.success("未同期のデータはありません。")
             else:
                 st.warning(f"未同期の試合: {pending_now}件")
-                if st.session_state.get("online", True):
-                    if st.button("今すぐ同期する", type="primary", use_container_width=True):
-                        try:
-                            n = db.sync_to_supabase()
-                            db.get_games_data.clear()
-                            db.get_rounds_data.clear()
-                            st.success(f"{n}件の試合をSupabaseに同期しました。")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"同期に失敗しました: {e}")
-                else:
-                    st.info("オンラインになってから同期してください。")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.session_state.get("online", True):
+                        if st.button("今すぐ同期する", type="primary", use_container_width=True):
+                            try:
+                                n = db.sync_to_supabase()
+                                db.get_games_data.clear()
+                                db.get_rounds_data.clear()
+                                st.success(f"{n}件の試合をSupabaseに同期しました。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"同期に失敗しました: {e}")
+                    else:
+                        st.info("オンラインになってから同期してください。")
+                with c2:
+                    if st.button("送信せずに完了扱いにする（スキップ）", use_container_width=True):
+                        db.mark_as_synced()
+                        db.get_games_data.clear()
+                        db.get_rounds_data.clear()
+                        st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
+                        st.rerun()
 
     with tab6:
         show_round_edit()
