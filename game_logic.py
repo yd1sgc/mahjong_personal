@@ -166,22 +166,22 @@ def apply_chombo(player):
 
 
 def autosave_draft():
-    if st.session_state.get("game_mode") != "detail":
+    if not st.session_state.get("game_active"):
         return
     state = {
         "view": st.session_state.get("view", "setup"),
         "game_active": True,
-        "players": list(st.session_state.players),
-        "scores": dict(st.session_state.scores),
-        "round_idx": st.session_state.round_idx,
-        "honba": st.session_state.honba,
-        "riichi_stick": st.session_state.riichi_stick,
-        "riichi_declared": list(st.session_state.riichi_declared),
-        "furo_declared": list(st.session_state.furo_declared),
-        "round_history": list(st.session_state.round_history),
-        "undo_stack": list(st.session_state.undo_stack[-3:]),
-        "game_mode": st.session_state.game_mode,
-        "input_mode": "normal",
+        "players": list(st.session_state.get("players", [])),
+        "scores": dict(st.session_state.get("scores", {})),
+        "round_idx": st.session_state.get("round_idx", 0),
+        "honba": st.session_state.get("honba", 0),
+        "riichi_stick": st.session_state.get("riichi_stick", 0),
+        "riichi_declared": list(st.session_state.get("riichi_declared", [])),
+        "furo_declared": list(st.session_state.get("furo_declared", [])),
+        "round_history": list(st.session_state.get("round_history", [])),
+        "undo_stack": list(st.session_state.get("undo_stack", [])[-3:]),
+        "game_mode": st.session_state.get("game_mode", "detail"),
+        "input_mode": st.session_state.get("input_mode", "normal"),
     }
     try:
         db.save_draft(state)
@@ -195,9 +195,11 @@ def reset_game():
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",
         "input_mode", "win_step", "win_data", "undo_stack", "round_history",
         "selected_players", "tenpai_selection", "confirm_endgame", "confirm_discard",
-        "draft_save_error",
+        "draft_save_error", "draft_data", "draft_time",
     ]
     for k in keys:
         if k in st.session_state:
             del st.session_state[k]
     st.session_state.view = "setup"
+    db.delete_draft()
+

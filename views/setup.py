@@ -97,8 +97,10 @@ def show_setup():
         if st.button("結果のみ", disabled=not ready, use_container_width=True):
             st.session_state.players = list(selected)
             st.session_state.game_mode = "simple"
+            st.session_state.game_active = True
             st.session_state.selected_players = []
             st.session_state.view = "simple_input"
+            game_logic.autosave_draft()
             st.rerun()
 
     c3, c4 = st.columns(2)
@@ -154,8 +156,9 @@ def show_simple_input():
             st.rerun()
     with c2:
         if st.button("キャンセル", use_container_width=True):
-            st.session_state.view = "setup"
+            game_logic.reset_game()
             st.rerun()
+
 
 
 def show_result():
