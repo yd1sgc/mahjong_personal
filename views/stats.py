@@ -5,7 +5,14 @@ import calc
 
 
 def show_stats():
-    st.title("成績")
+    c_t1, c_t2 = st.columns([2, 2])
+    with c_t1:
+        st.title("成績")
+    with c_t2:
+        if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="top_to_setup"):
+            st.session_state.view = "setup"
+            st.rerun()
+
     df_all = db.get_games_data()
 
     year_options = ["全期間"]
@@ -19,7 +26,7 @@ def show_stats():
 
     if df_games.empty:
         st.info("記録がまだありません。対局を終局・記録すると反映されます。")
-        if st.button("戻る", use_container_width=True):
+        if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="empty_to_setup"):
             st.session_state.view = "setup"
             st.rerun()
         return
@@ -224,6 +231,6 @@ def show_stats():
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
-    if st.button("戻る", use_container_width=True):
+    if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="bottom_to_setup"):
         st.session_state.view = "setup"
         st.rerun()
