@@ -53,11 +53,11 @@ def show_game():
     honba_str = f"{st.session_state.honba}本場"
     kyotaku_str = f"供託{st.session_state.riichi_stick}本"
     st.markdown(
-        f"<div style='font-size:18px; font-weight:bold; margin-bottom:6px; display:flex; align-items:center; flex-wrap:wrap; gap:8px;'>"
+        f"<div style='font-size:20px; font-weight:bold; margin-top:6px; margin-bottom:14px; padding-top:4px; display:flex; align-items:center; flex-wrap:wrap; gap:10px;'>"
         f"<span>{round_name}</span>"
-        f"<span style='color:#ffaa00; background:#332200; padding:3px 8px; border-radius:6px; font-size:17px;'>{honba_str}</span>"
-        f"<span style='color:#00e5ff; background:#002233; padding:3px 8px; border-radius:6px; font-size:17px;'>{kyotaku_str}</span>"
-        f"<span style='font-size:16px; opacity:0.9; margin-left:auto;'>親: {dealer}</span></div>",
+        f"<span style='color:#ffaa00; background:#332200; padding:4px 10px; border-radius:6px; font-size:18px;'>{honba_str}</span>"
+        f"<span style='color:#00e5ff; background:#002233; padding:4px 10px; border-radius:6px; font-size:18px;'>{kyotaku_str}</span>"
+        f"<span style='font-size:18px; opacity:0.9; margin-left:auto;'>親: {dealer}</span></div>",
         unsafe_allow_html=True,
     )
 
@@ -146,7 +146,6 @@ def show_game():
 
     _show_rules_expander()
 
-    st.divider()
     if st.session_state.confirm_endgame:
         st.warning("本当に終局しますか？")
         c_yes, c_no = st.columns(2)
