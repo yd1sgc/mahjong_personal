@@ -5,6 +5,9 @@ from views.game import (show_game, show_win_input, show_ryukyoku_input,
                         show_chombo_input, show_edit_history, show_endgame)
 from views.stats import show_stats
 from views.data_manage import show_data_manage
+from views.home import show_home
+from views.rule_manage import show_rule_manage
+from views.group_manage import show_group_manage
 
 st.set_page_config(
     page_title="麻雀スコア",
@@ -130,7 +133,7 @@ hr {
 
 def init_session():
     defaults = {
-        "view": "setup" if db.IS_LOCAL else "stats",
+        "view": "home" if db.IS_LOCAL else "stats",
         "game_active": False,
         "players": [],
         "scores": {},
@@ -204,6 +207,14 @@ if view == "stats":
     show_stats()
 elif not check_auth():
     pass
+elif view == "home":
+    show_home()
+elif view == "setup":
+    show_setup()
+elif view == "group_manage":
+    show_group_manage()
+elif view == "rule_manage":
+    show_rule_manage()
 elif view == "result":
     show_result()
 elif view == "data_manage":

@@ -121,6 +121,45 @@ def init_local_db():
             state_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS rules (
+            rule_id TEXT PRIMARY KEY,
+            rule_name TEXT NOT NULL,
+            is_default INTEGER DEFAULT 0,
+            config_json TEXT NOT NULL
+        )''')
+        # デフォルトルールのシードデータ
+        c.execute("SELECT COUNT(*) FROM rules")
+        if c.fetchone()[0] == 0:
+            default_rules = [
+                ("m_league", "Mリーグルール", 1, json.dumps({
+                    "init_score": 25000, "return_score": 30000,
+                    "uma": [50, 10, -10, -30], "description": "25,000点持ち/30,000点返し (ウマ +50/+10/-10/-30)"
+                })),
+                ("standard_10_30", "一般10-30", 0, json.dumps({
+                    "init_score": 25000, "return_score": 30000,
+                    "uma": [40, 10, -10, -20], "description": "25,000点持ち/30,000点返し (ウマ +40/+10/-10/-20)"
+                })),
+                ("gotto_5_10", "ゴットー (5-10)", 0, json.dumps({
+                    "init_score": 25000, "return_score": 30000,
+                    "uma": [30, 5, -5, -10], "description": "25,000点持ち/30,000点返し (ウマ +30/+5/-5/-10)"
+                })),
+                ("no_uma_no_oka", "ノーウマ・オカなし", 0, json.dumps({
+                    "init_score": 30000, "return_score": 30000,
+                    "uma": [0, 0, 0, 0], "description": "30,000点持ち/30,000点返し (ウマなし)"
+                }))
+            ]
+            c.executemany("INSERT INTO rules VALUES (?, ?, ?, ?)", default_rules)
+
+        c.execute('''CREATE TABLE IF NOT EXISTS member_groups (
+            group_id TEXT PRIMARY KEY,
+            group_name TEXT NOT NULL,
+            default_rule_id TEXT DEFAULT 'm_league'
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS group_members (
+            group_id TEXT NOT NULL,
+            member_name TEXT NOT NULL,
+            PRIMARY KEY (group_id, member_name)
+        )''')
 
 
 def check_connectivity():
@@ -567,3 +606,141 @@ def import_games_from_df(df):
             next_id += 1
             count += 1
     return count
+
+
+# ── ルール管理関数 ─────────────────────────────────────────
+
+def get_rules():
+    """登録済みルールの一覧をリストで取得"""
+    default_fallback = [
+        {"rule_id": "m_league", "rule_name": "Mリーグルール", "is_default": 1,
+         "config": {"init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30]}},
+        {"rule_id": "standard_10_30", "rule_name": "一般10-30", "is_default": 0,
+         "config": {"init_score": 25000, "return_score": 30000, "uma": [40, 10, -10, -20]}},
+        {"rule_id": "gotto_5_10", "rule_name": "ゴットー (5-10)", "is_default": 0,
+         "config": {"init_score": 25000, "return_score": 30000, "uma": [30, 5, -5, -10]}},
+        {"rule_id": "no_uma_no_oka", "rule_name": "ノーウマ・オカなし", "is_default": 0,
+         "config": {"init_score": 30000, "return_score": 30000, "uma": [0, 0, 0, 0]}},
+    ]
+    if not IS_LOCAL:
+        return default_fallback
+
+    try:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT rule_id, rule_name, is_default, config_json FROM rules ORDER BY is_default DESC, rule_name")
+            rows = c.fetchall()
+            if not rows:
+                return default_fallback
+            results = []
+            for r in rows:
+                try:
+                    cfg = json.loads(r[3])
+                except Exception:
+                    cfg = {}
+                results.append({
+                    "rule_id": r[0],
+                    "rule_name": r[1],
+                    "is_default": r[2],
+                    "config": cfg
+                })
+            return results
+    except Exception:
+        return default_fallback
+
+
+def save_rule(rule_id, rule_name, config_dict, is_default=False):
+    """ルールの作成・更新"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        if is_default:
+            c.execute("UPDATE rules SET is_default = 0")
+        config_str = json.dumps(config_dict, ensure_ascii=False)
+        c.execute('''
+            INSERT INTO rules (rule_id, rule_name, is_default, config_json)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(rule_id) DO UPDATE SET
+                rule_name=excluded.rule_name,
+                is_default=excluded.is_default,
+                config_json=excluded.config_json
+        ''', (rule_id, rule_name, 1 if is_default else 0, config_str))
+
+
+def delete_rule(rule_id):
+    """ルールの削除"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM rules WHERE rule_id = ?", (rule_id,))
+
+
+def set_default_rule(rule_id):
+    """デフォルトルールの変更"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE rules SET is_default = 0")
+        c.execute("UPDATE rules SET is_default = 1 WHERE rule_id = ?", (rule_id,))
+
+
+# ── グループ管理関数 ────────────────────────────────────────
+
+def get_groups():
+    """登録済みグループの一覧を取得 (メンバーリスト付き)"""
+    if not IS_LOCAL:
+        return []
+    try:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT group_id, group_name, default_rule_id FROM member_groups ORDER BY group_name")
+            group_rows = c.fetchall()
+            groups = []
+            for g_id, g_name, r_id in group_rows:
+                c.execute("SELECT member_name FROM group_members WHERE group_id = ? ORDER BY member_name", (g_id,))
+                members = [m[0] for m in c.fetchall()]
+                groups.append({
+                    "group_id": g_id,
+                    "group_name": g_name,
+                    "default_rule_id": r_id,
+                    "members": members
+                })
+            return groups
+    except Exception:
+        return []
+
+
+def save_group(group_id, group_name, default_rule_id, member_list):
+    """グループの作成・更新"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO member_groups (group_id, group_name, default_rule_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(group_id) DO UPDATE SET
+                group_name=excluded.group_name,
+                default_rule_id=excluded.default_rule_id
+        ''', (group_id, group_name, default_rule_id))
+        
+        c.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        for m in member_list:
+            if m and str(m).strip():
+                c.execute("INSERT INTO group_members (group_id, member_name) VALUES (?, ?)",
+                          (group_id, str(m).strip()))
+
+
+def delete_group(group_id):
+    """グループの削除"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM member_groups WHERE group_id = ?", (group_id,))
+        c.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+
+

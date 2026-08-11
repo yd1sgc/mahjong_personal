@@ -64,8 +64,19 @@ def calc_oka_nashi_point(score, rank):
         return round(total, 1)
 
 
-def calc_special_point(score, rank):
-    """ ウマ・オカ計算 (設定反映版) """
+def calc_special_point(score, rank, rule_config=None):
+    """ ウマ・オカ計算 (ルール設定動的反映版) """
+    if rule_config and isinstance(rule_config, dict):
+        ret_pt = rule_config.get("return_score", RETURN_POINT)
+        uma_list = rule_config.get("uma", [50, 10, -10, -30])
+        uma_pt = uma_list[rank - 1] if 1 <= rank <= len(uma_list) else 0
+        base_pt = (score - ret_pt) / 1000
+        total = base_pt + uma_pt
+        if ROUND_INTEGER:
+            return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
+        else:
+            return round(total, 1)
+
     # 素点の計算: (持ち点 - 返し点) / 1000
     base_pt = (score - RETURN_POINT) / 1000
     

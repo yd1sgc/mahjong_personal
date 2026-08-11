@@ -26,7 +26,6 @@ def show_setup():
                 st.session_state["draft_data"] = None
                 st.session_state["draft_time"] = None
                 st.rerun()
-        with cd:
             if st.button("破棄する", use_container_width=True, key="draft_discard"):
                 db.delete_draft()
                 st.session_state["draft_data"] = None
@@ -34,8 +33,52 @@ def show_setup():
                 st.rerun()
         st.divider()
 
-    st.markdown("### 麻雀スコア")
+    ch1, ch2 = st.columns([1, 3])
+    with ch1:
+        if st.button("🏠 ホーム", use_container_width=True, key="setup_back_home"):
+            st.session_state.view = "home"
+            st.rerun()
+    with ch2:
+        st.markdown("### 対局メンバー・ルール選択")
 
+    # ── グループ＆ルール選択 ──────────────────────────────────
+    groups = db.get_groups()
+    rules = db.get_rules()
+    rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
+
+    group_options = [{"group_id": "all", "group_name": "全メンバー (グループ指定なし)", "members": MEMBERS, "default_rule_id": "m_league"}] + groups
+
+    # セッション状態の初期化
+    if "selected_group_id" not in st.session_state:
+        st.session_state.selected_group_id = "all"
+    if "active_rule_id" not in st.session_state:
+        st.session_state.active_rule_id = rules[0]["rule_id"] if rules else "m_league"
+
+    col_g, col_r = st.columns(2)
+    with col_g:
+        grp_names = [g["group_name"] for g in group_options]
+        cur_g_idx = next((idx for idx, g in enumerate(group_options) if g["group_id"] == st.session_state.selected_group_id), 0)
+        sel_g_name = st.selectbox("👥 グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
+        
+        chosen_group = next((g for g in group_options if g["group_name"] == sel_g_name), group_options[0])
+        if chosen_group["group_id"] != st.session_state.selected_group_id:
+            st.session_state.selected_group_id = chosen_group["group_id"]
+            # グループ変更時にデフォルトルールを自動適用
+            if chosen_group.get("default_rule_id") and chosen_group["default_rule_id"] in rule_map:
+                st.session_state.active_rule_id = chosen_group["default_rule_id"]
+            st.rerun()
+
+    with col_r:
+        r_ids = [r["rule_id"] for r in rules]
+        cur_r_idx = r_ids.index(st.session_state.active_rule_id) if st.session_state.active_rule_id in r_ids else 0
+        sel_r_id = st.selectbox("⚙️ 適用ルール", options=r_ids, index=cur_r_idx, format_func=lambda x: rule_map.get(x, x), key="setup_rule_select")
+        if sel_r_id != st.session_state.active_rule_id:
+            st.session_state.active_rule_id = sel_r_id
+            st.rerun()
+
+    st.divider()
+
+    # ── 席順スロット表示 ────────────────────────────────────
     selected = st.session_state.selected_players
     wind_labels = ["東", "南", "西", "北"]
 
@@ -52,12 +95,20 @@ def show_setup():
                         st.rerun()
                 else:
                     st.button(f"{wind}: —", key=f"slot_{i}",
-                              disabled=True, use_container_width=True)
+                               disabled=True, use_container_width=True)
 
     st.divider()
 
+    # ── メンバーボタン一覧 ───────────────────────────────────
+    target_members = chosen_group.get("members", MEMBERS)
+    if not target_members:
+        target_members = MEMBERS
+
+    show_all = st.checkbox("全登録メンバーを表示する", value=(chosen_group["group_id"] == "all"), key="setup_show_all_mems")
+    display_members = MEMBERS if show_all else target_members
+
     grid = st.columns(2)
-    for i, m in enumerate(MEMBERS):
+    for i, m in enumerate(display_members):
         with grid[i % 2]:
             is_sel = m in selected
             order = selected.index(m) + 1 if is_sel else None
@@ -71,10 +122,10 @@ def show_setup():
                     selected.append(m)
                 st.rerun()
 
-    guest_name = st.text_input("ゲスト名", placeholder="ゲスト名を入力してEnter",
+    guest_name = st.text_input("➕ ゲストを追加", placeholder="ゲスト名を入力してEnter",
                                key="guest_input")
     if guest_name:
-        if st.button("ゲストを追加",
+        if st.button("ゲストを追加する",
                      disabled=(len(selected) >= 4 or guest_name in selected)):
             selected.append(guest_name)
             st.rerun()
@@ -84,33 +135,26 @@ def show_setup():
     ready = len(selected) == 4
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("詳細モード", type="primary",
+        if st.button("詳細モードで開始", type="primary",
                      disabled=not ready, use_container_width=True):
             st.session_state.players = list(selected)
-            st.session_state.scores = {p: INIT_SCORE for p in selected}
+            # 選択中のルールの配給原点 (init_score) を使用
+            active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
+            init_score_val = active_cfg.get("init_score", INIT_SCORE)
+            st.session_state.scores = {p: init_score_val for p in selected}
             st.session_state.game_active = True
             st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
             game_logic.autosave_draft()
             st.rerun()
     with c2:
-        if st.button("結果のみ", disabled=not ready, use_container_width=True):
+        if st.button("結果のみ入力", disabled=not ready, use_container_width=True):
             st.session_state.players = list(selected)
             st.session_state.game_mode = "simple"
             st.session_state.game_active = True
             st.session_state.selected_players = []
             st.session_state.view = "simple_input"
             game_logic.autosave_draft()
-            st.rerun()
-
-    c3, c4 = st.columns(2)
-    with c3:
-        if st.button("成績を見る", use_container_width=True):
-            st.session_state.view = "stats"
-            st.rerun()
-    with c4:
-        if st.button("データ管理", use_container_width=True):
-            st.session_state.view = "data_manage"
             st.rerun()
 
     _show_rules_expander()
@@ -171,5 +215,5 @@ def show_result():
             st.write(f"{row['rank']}位: **{row['name']}**　{row['score']:,}点　({row['pt']:+.1f}pt)")
     st.divider()
     if st.button("閉じる", type="primary", use_container_width=True):
-        st.session_state.view = "setup"
+        st.session_state.view = "home"
         st.rerun()
