@@ -90,6 +90,13 @@ hr {
         flex: 1 1 0% !important;
     }
 }
+/* 全コンテナ・要素同士の縦ギャップ強烈削減 */
+[data-testid="stElementContainer"] {
+    margin-bottom: 0.25rem !important;
+}
+[data-testid="stVerticalBlock"] {
+    gap: 0.3rem !important;
+}
 /* プレイヤー列ボタン（3列行の1列目）: 名前・点数を2行スタイル */
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
   [data-testid="stColumn"]:first-child .stButton > button p {

@@ -53,10 +53,11 @@ def show_game():
     honba_str = f"{st.session_state.honba}本場"
     kyotaku_str = f"供託{st.session_state.riichi_stick}本"
     st.markdown(
-        f"<div style='font-size:16px; font-weight:bold; margin-bottom:4px;'>"
-        f"{round_name} <span style='color:#ffaa00; background:#332200; padding:2px 6px; border-radius:4px;'>{honba_str}</span> "
-        f"<span style='color:#00e5ff; background:#002233; padding:2px 6px; border-radius:4px;'>{kyotaku_str}</span> "
-        f"<span style='font-size:14px; opacity:0.8;'>親: {dealer}</span></div>",
+        f"<div style='font-size:18px; font-weight:bold; margin-bottom:6px; display:flex; align-items:center; flex-wrap:wrap; gap:8px;'>"
+        f"<span>{round_name}</span>"
+        f"<span style='color:#ffaa00; background:#332200; padding:3px 8px; border-radius:6px; font-size:17px;'>{honba_str}</span>"
+        f"<span style='color:#00e5ff; background:#002233; padding:3px 8px; border-radius:6px; font-size:17px;'>{kyotaku_str}</span>"
+        f"<span style='font-size:16px; opacity:0.9; margin-left:auto;'>親: {dealer}</span></div>",
         unsafe_allow_html=True,
     )
 
@@ -113,8 +114,6 @@ def show_game():
                     game_logic.declare_riichi(p)
                     st.rerun()
 
-    st.divider()
-
     c1, c2 = st.columns(2)
     with c1:
         if st.button("和了", type="primary", use_container_width=True):
@@ -127,8 +126,6 @@ def show_game():
             st.session_state.input_mode = "ryukyoku"
             st.session_state.tenpai_selection = list(riichi_declared)
             st.rerun()
-
-    st.divider()
 
     if st.button("↩ 元に戻す",
                  disabled=not st.session_state.undo_stack,
