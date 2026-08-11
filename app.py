@@ -90,12 +90,19 @@ hr {
         flex: 1 1 0% !important;
     }
 }
-/* 全コンテナ・要素同士の縦ギャップ強烈削減 */
-[data-testid="stElementContainer"] {
-    margin-bottom: 0.25rem !important;
+/* 対局画面の水平ブロック・要素間のみ縦ギャップを極小化 */
+[data-testid="stHorizontalBlock"] {
+    margin-bottom: 0.15rem !important;
 }
-[data-testid="stVerticalBlock"] {
-    gap: 0.3rem !important;
+[data-testid="stHorizontalBlock"] [data-testid="stElementContainer"] {
+    margin-bottom: 0 !important;
+}
+/* 単体縦並びボタン（和了者・放銃者・流局などの選択画面）は押しやすい間隔を保持 */
+.main [data-testid="stElementContainer"]:has(> .stButton) {
+    margin-bottom: 0.5rem;
+}
+[data-testid="stHorizontalBlock"] [data-testid="stElementContainer"]:has(> .stButton) {
+    margin-bottom: 0 !important;
 }
 /* プレイヤー列ボタン（3列行の1列目）: 名前・点数を2行スタイル */
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
