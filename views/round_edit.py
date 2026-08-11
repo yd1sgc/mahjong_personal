@@ -100,9 +100,7 @@ def calc_deltas(old_row, new_vals, all_players, df_rounds, round_idx):
     return game_deltas
 
 
-def show_round_edit():
-    st.subheader("局修正")
-
+def show_round_edit(selected_game_id=None):
     df_games = db.load_all_games()
     if df_games.empty:
         st.info("記録がありません。")
@@ -112,7 +110,12 @@ def show_round_edit():
         return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
 
     options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
-    sel_id = st.selectbox("試合を選択", list(options.keys()),
+    opt_keys = list(options.keys())
+    default_idx = 0
+    if selected_game_id is not None and selected_game_id in opt_keys:
+        default_idx = opt_keys.index(selected_game_id)
+
+    sel_id = st.selectbox("試合を選択", opt_keys, index=default_idx,
                           format_func=lambda x: options[x], key="re_game_id")
 
     game_row = df_games[df_games['game_id'] == sel_id].iloc[0]

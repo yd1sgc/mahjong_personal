@@ -341,7 +341,7 @@ def show_chombo_input():
 
 def show_edit_history():
     st.title("局履歴の修正")
-    st.caption("記録内容の修正のみ。点数の変更は「元に戻す」を使用してください。")
+    st.caption("修正内容に応じて全体の点数・本場・供託が自動再計算されます。")
 
     history = st.session_state.round_history
     if not history:
@@ -351,58 +351,112 @@ def show_edit_history():
             st.rerun()
         return
 
+    players = st.session_state.players
+
+    # 1. これまでの対局履歴（一覧表示）
     type_label = {"ron": "ロン", "tsumo": "ツモ", "ryukyoku": "流局", "chombo": "チョンボ"}
     rows = []
     for r in history:
         rows.append({
             "局": r["kyoku_name"],
             "種別": type_label.get(r["win_type"], r["win_type"]),
-            "和了": r.get("winner", ""),
-            "放銃": r.get("loser", ""),
-            "点数": r.get("score", 0),
+            "和了/対象": r.get("winner", ""),
+            "放銃者": r.get("loser", ""),
+            "基本点": r.get("score", 0),
             "リーチ": ",".join(r.get("riichi", [])),
             "副露": ",".join(r.get("furo", [])),
-            "テンパイ": ",".join(r.get("tenpai", [])),
+            "聴牌": ",".join(r.get("tenpai", [])),
         })
 
-    edited = st.data_editor(
-        pd.DataFrame(rows),
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "種別": st.column_config.SelectboxColumn(
-                "種別", options=["ロン", "ツモ", "流局", "チョンボ"], width="small"
-            ),
-            "点数": st.column_config.NumberColumn("点数", min_value=0, step=100),
-        },
-        hide_index=True,
-    )
+    st.subheader("対局履歴一覧")
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("保存", type="primary", use_container_width=True):
-            rev = {"ロン": "ron", "ツモ": "tsumo", "流局": "ryukyoku", "チョンボ": "chombo"}
-            new_history = []
-            for _, row in edited.iterrows():
-                wt = rev.get(str(row["種別"]), "ron")
-                new_history.append({
-                    "kyoku_name": str(row["局"]),
-                    "winner": str(row["和了"]) if row["和了"] else "",
-                    "loser": str(row["放銃"]) if row["放銃"] else "",
-                    "win_type": wt,
-                    "score": int(row["点数"]) if pd.notna(row["点数"]) else 0,
-                    "riichi": [x.strip() for x in str(row["リーチ"]).split(",") if x.strip()],
-                    "furo": [x.strip() for x in str(row["副露"]).split(",") if x.strip()],
-                    "tenpai": [x.strip() for x in str(row["テンパイ"]).split(",") if x.strip()],
-                })
-            st.session_state.round_history = new_history
-            st.session_state.input_mode = "normal"
-            game_logic.autosave_draft()
-            st.rerun()
-    with c2:
-        if st.button("キャンセル", use_container_width=True):
-            st.session_state.input_mode = "normal"
-            st.rerun()
+    st.divider()
+    st.subheader("局データの編集")
+
+    # 2. 修正対象局の選択
+    round_labels = [f"【第{i+1}局】{r['kyoku_name']} ({type_label.get(r['win_type'], r['win_type'])})"
+                    for i, r in enumerate(history)]
+    sel_idx = st.selectbox("修正する局を選択してください", range(len(history)),
+                           format_func=lambda i: round_labels[i], key="in_game_edit_idx")
+
+    target_r = history[sel_idx]
+
+    # 3. フォーム入力
+    with st.form("in_game_round_edit_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            type_opts = ["ron", "tsumo", "ryukyoku", "chombo"]
+            type_names = {"ron": "ロン", "tsumo": "ツモ", "ryukyoku": "流局", "chombo": "チョンボ"}
+            cur_type = target_r.get("win_type", "ron")
+            new_type = st.selectbox(
+                "和了/精算種別", type_opts,
+                index=type_opts.index(cur_type) if cur_type in type_opts else 0,
+                format_func=lambda x: type_names.get(x, x),
+                key="ige_type"
+            )
+
+            p_opts = [""] + players
+            cur_winner = target_r.get("winner", "")
+            new_winner = st.selectbox(
+                "和了者（チョンボ時は対象者）", p_opts,
+                index=p_opts.index(cur_winner) if cur_winner in p_opts else 0,
+                key="ige_winner"
+            )
+
+        with col2:
+            new_score = st.number_input(
+                "基本点数 (本場除く)",
+                value=int(target_r.get("score", 0)), step=100,
+                key="ige_score"
+            )
+
+            cur_loser = target_r.get("loser", "")
+            new_loser = st.selectbox(
+                "放銃者 (ロンのみ)", p_opts,
+                index=p_opts.index(cur_loser) if cur_loser in p_opts else 0,
+                key="ige_loser"
+            )
+
+        st.write("**リーチ宣言者**")
+        old_riichi = target_r.get("riichi", [])
+        cols_r = st.columns(4)
+        new_riichi = [p for i, p in enumerate(players)
+                      if cols_r[i].checkbox(p, value=(p in old_riichi), key=f"ige_ri_{p}")]
+
+        st.write("**副露（ポン・チー・カン）**")
+        old_furo = target_r.get("furo", [])
+        cols_f = st.columns(4)
+        new_furo = [p for i, p in enumerate(players)
+                    if cols_f[i].checkbox(p, value=(p in old_furo), key=f"ige_fu_{p}")]
+
+        st.write("**聴牌者（流局時のみ）**")
+        old_tenpai = target_r.get("tenpai", [])
+        cols_t = st.columns(4)
+        new_tenpai = [p for i, p in enumerate(players)
+                      if cols_t[i].checkbox(p, value=(p in old_tenpai), key=f"ige_te_{p}")]
+
+        submitted = st.form_submit_button("修正内容を保存・再計算する", type="primary", use_container_width=True)
+
+    if submitted:
+        history[sel_idx]["win_type"] = new_type
+        history[sel_idx]["winner"] = new_winner
+        history[sel_idx]["loser"] = new_loser if new_type == "ron" else ""
+        history[sel_idx]["score"] = int(new_score)
+        history[sel_idx]["riichi"] = new_riichi
+        history[sel_idx]["furo"] = new_furo
+        history[sel_idx]["tenpai"] = new_tenpai if new_type == "ryukyoku" else []
+
+        st.session_state.round_history = history
+        game_logic.recalculate_from_history()
+        st.session_state.input_mode = "normal"
+        st.success("局のデータを修正し、点数・本場・供託を再計算しました。")
+        st.rerun()
+
+    if st.button("キャンセル（戻る）", use_container_width=True):
+        st.session_state.input_mode = "normal"
+        st.rerun()
+
 
 
 def show_endgame():

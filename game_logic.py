@@ -43,6 +43,114 @@ def undo_last():
     return True
 
 
+def _parse_kyoku_idx(kyoku_name):
+    if not kyoku_name or len(kyoku_name) < 3:
+        return 0
+    wind_map = {"東": 0, "南": 1, "西": 2}
+    w = wind_map.get(kyoku_name[0], 0)
+    try:
+        num = int(kyoku_name[1]) - 1
+    except ValueError:
+        num = 0
+    return w * 4 + num
+
+
+def recalculate_from_history():
+    players = st.session_state.players
+    if not players:
+        return
+    scores = {p: 25000 for p in players}
+    riichi_stick = 0
+    honba = 0
+
+    for r in st.session_state.round_history:
+        k_idx = _parse_kyoku_idx(r.get("kyoku_name", ""))
+        dealer = players[k_idx % 4]
+
+        # リーチ処理
+        riichi_list = r.get("riichi", [])
+        for p in riichi_list:
+            if p in scores:
+                scores[p] -= 1000
+                riichi_stick += 1
+
+        win_type = r.get("win_type", "")
+        winner = r.get("winner", "")
+        loser = r.get("loser", "")
+        score = r.get("score", 0)
+
+        if win_type == "ron":
+            total = score + honba * 300
+            if loser in scores:
+                scores[loser] -= total
+            if winner in scores:
+                scores[winner] += total + riichi_stick * 1000
+            riichi_stick = 0
+            if winner == dealer:
+                honba += 1
+            else:
+                honba = 0
+
+        elif win_type == "tsumo":
+            if winner == dealer:
+                each = (score // 3) + honba * 100
+                for p in players:
+                    if p != winner:
+                        scores[p] -= each
+                        scores[winner] += each
+                scores[winner] += riichi_stick * 1000
+                honba += 1
+            else:
+                oya_pay = int(((score / 2) + 99) // 100 * 100) + honba * 100
+                ko_pay = int(((score / 4) + 99) // 100 * 100) + honba * 100
+                for p in players:
+                    if p == winner:
+                        continue
+                    pay = oya_pay if p == dealer else ko_pay
+                    scores[p] -= pay
+                    scores[winner] += pay
+                scores[winner] += riichi_stick * 1000
+                honba = 0
+            riichi_stick = 0
+
+        elif win_type == "ryukyoku":
+            tenpai = r.get("tenpai", [])
+            noten = [p for p in players if p not in tenpai]
+            n_t, n_n = len(tenpai), len(noten)
+            if 0 < n_t < 4:
+                each_noten = 3000 // n_n
+                each_tenpai = 3000 // n_t
+                for p in noten:
+                    scores[p] -= each_noten
+                for p in tenpai:
+                    scores[p] += each_tenpai
+            honba += 1
+
+        elif win_type == "chombo":
+            chombo_p = winner
+            if chombo_p == dealer:
+                for p in players:
+                    if p != chombo_p:
+                        scores[chombo_p] -= 4000
+                        scores[p] += 4000
+            else:
+                for p in players:
+                    if p == chombo_p:
+                        continue
+                    elif p == dealer:
+                        scores[chombo_p] -= 4000
+                        scores[p] += 4000
+                    else:
+                        scores[chombo_p] -= 2000
+                        scores[p] += 2000
+
+    st.session_state.scores = scores
+    st.session_state.riichi_stick = riichi_stick
+    st.session_state.honba = honba
+    autosave_draft()
+
+
+
 def record_round(winner, loser, win_type, score, tenpai=None):
     st.session_state.round_history.append({
         "kyoku_name": get_round_name(),

@@ -14,7 +14,7 @@ def show_data_manage():
         elif pending > 0:
             st.info(f"未同期の試合が {pending}件 あります。")
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["エクスポート", "CSV取込", "スコア修正", "試合削除", "同期", "局修正"])
+    tab1, tab2, tab3, tab4 = st.tabs(["エクスポート", "CSV取込", "データ編集・削除", "同期"])
 
     with tab1:
         st.subheader("CSVエクスポート")
@@ -71,7 +71,7 @@ def show_data_manage():
                 st.error(f"読み込みエラー: {e}")
 
     with tab3:
-        st.subheader("スコア修正")
+        st.subheader("データ編集・削除")
         df_games = db.load_all_games()
         if df_games.empty:
             st.info("記録がありません。")
@@ -80,53 +80,60 @@ def show_data_manage():
                 return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
 
             options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
-            sel_id = st.selectbox("試合を選択", list(options.keys()),
-                                  format_func=lambda x: options[x], key="edit_game_id")
-            row = df_games[df_games['game_id'] == sel_id].iloc[0]
-            new_scores = {}
-            for i in range(1, 5):
-                name = row[f'p{i}_name']
-                new_scores[name] = st.number_input(
-                    name, value=int(row[f'p{i}_score']), step=100, key=f"edit_score_{i}")
-            total = sum(new_scores.values())
-            ok = (total == 100000)
-            st.caption(f"合計: {total:,}点")
-            if st.button("保存", type="primary", disabled=not ok, use_container_width=True):
-                db.update_game_scores(sel_id, new_scores)
-                db.get_games_data.clear()
-                st.success("保存しました。")
-                st.rerun()
+            sel_id = st.selectbox("対象の試合を選択してください", list(options.keys()),
+                                  format_func=lambda x: options[x], key="edit_dm_game_id")
+
+            action_mode = st.radio(
+                "操作項目を選択",
+                ["① 最終スコア直接修正", "② 各局の詳細修正", "③ 試合データの削除"],
+                horizontal=True,
+                key="dm_action_mode"
+            )
+
+            st.divider()
+
+            if action_mode == "① 最終スコア直接修正":
+                st.caption("最終結果のスコア（点数）を直接入力して修正します。合計100,000点が必要です。")
+                row = df_games[df_games['game_id'] == sel_id].iloc[0]
+                new_scores = {}
+                for i in range(1, 5):
+                    name = row[f'p{i}_name']
+                    new_scores[name] = st.number_input(
+                        name, value=int(row[f'p{i}_score']), step=100, key=f"edit_score_{i}"
+                    )
+                total = sum(new_scores.values())
+                ok = (total == 100000)
+                st.caption(f"合計: {total:,}点")
+                if st.button("スコアを保存", type="primary", disabled=not ok, use_container_width=True):
+                    db.update_game_scores(sel_id, new_scores)
+                    db.get_games_data.clear()
+                    st.success("スコアを保存しました。")
+                    st.rerun()
+
+            elif action_mode == "② 各局の詳細修正":
+                st.caption("特定局の和了者・放銃者・点数等を修正します。最終スコアにも差分が自動反映されます。")
+                show_round_edit(selected_game_id=sel_id)
+
+            elif action_mode == "③ 試合データの削除":
+                st.caption("この試合のデータを完全に削除します。")
+                row = df_games[df_games['game_id'] == sel_id].iloc[0]
+                for i in range(1, 5):
+                    rank = int(row.get(f'p{i}_rank', i))
+                    st.write(f"{rank}位: {row[f'p{i}_name']}  {int(row[f'p{i}_score']):,}点")
+                confirm_input = st.text_input(
+                    f"削除確認：ゲームID「{int(sel_id)}」を入力してください",
+                    placeholder=str(int(sel_id)), key="del_confirm_id"
+                )
+                confirmed = confirm_input.strip() == str(int(sel_id))
+                if st.button("この試合を削除する", type="primary",
+                             disabled=not confirmed, use_container_width=True):
+                    db.delete_game(int(sel_id))
+                    db.get_games_data.clear()
+                    db.get_rounds_data.clear()
+                    st.success(f"Game #{sel_id} を削除しました。")
+                    st.rerun()
 
     with tab4:
-        st.subheader("試合削除")
-        df_games = db.load_all_games()
-        if df_games.empty:
-            st.info("記録がありません。")
-        else:
-            def game_label(row):
-                return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
-
-            options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
-            sel_id = st.selectbox("削除する試合を選択", list(options.keys()),
-                                  format_func=lambda x: options[x], key="del_game_id")
-            row = df_games[df_games['game_id'] == sel_id].iloc[0]
-            for i in range(1, 5):
-                rank = int(row.get(f'p{i}_rank', i))
-                st.write(f"{rank}位: {row[f'p{i}_name']}  {int(row[f'p{i}_score']):,}点")
-            confirm_input = st.text_input(
-                f"削除確認：ゲームID「{int(sel_id)}」を入力してください",
-                placeholder=str(int(sel_id)), key="del_confirm_id"
-            )
-            confirmed = confirm_input.strip() == str(int(sel_id))
-            if st.button("この試合を削除", type="primary",
-                         disabled=not confirmed, use_container_width=True):
-                db.delete_game(int(sel_id))
-                db.get_games_data.clear()
-                db.get_rounds_data.clear()
-                st.success(f"Game #{sel_id} を削除しました。")
-                st.rerun()
-
-    with tab5:
         st.subheader("Supabaseへの同期")
         if not db.IS_LOCAL:
             st.info("同期機能はローカル起動時のみ使用できます。")
@@ -158,8 +165,6 @@ def show_data_manage():
                         st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
                         st.rerun()
 
-    with tab6:
-        show_round_edit()
 
     if st.button("戻る", use_container_width=True):
         st.session_state.view = "setup"
