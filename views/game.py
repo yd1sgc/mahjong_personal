@@ -232,9 +232,17 @@ def show_win_input():
                             st.rerun()
 
         with st.expander("翻・符で計算"):
-            han = st.number_input("翻", min_value=1, max_value=13, value=3, key="han_in")
+            han_opts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, "13 (役満)", "26 (ダブル役満)"]
+            sel_han = st.selectbox("翻", han_opts, index=2, key="han_in")
+            if sel_han == "13 (役満)":
+                han = 13
+            elif sel_han == "26 (ダブル役満)":
+                han = 26
+            else:
+                han = int(sel_han)
+
             fu = st.selectbox("符", [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110],
-                              index=2, key="fu_in")
+                               index=2, key="fu_in")
             _total, _oya_p, _ko_p = calc.calculate_score(han, fu, is_dealer,
                                                           win_type == "tsumo")
             if win_type == "ron":

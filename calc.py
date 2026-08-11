@@ -39,7 +39,8 @@ def calculate_score(han, fu, is_dealer, is_tsumo):
     elif han < 8: base = 3000
     elif han < 11: base = 4000
     elif han < 13: base = 6000
-    else: base = 8000
+    elif han < 26: base = 8000
+    else: base = 16000
 
     def round_up(n): return ((n + 99) // 100) * 100
 
