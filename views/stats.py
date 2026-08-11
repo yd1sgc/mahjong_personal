@@ -5,13 +5,15 @@ import calc
 
 
 def show_stats():
-    c_t1, c_t2 = st.columns([2, 2], vertical_alignment="center")
+    c_t1, c_t2 = st.columns([2, 2])
     with c_t1:
         st.title("成績")
     with c_t2:
+        st.markdown("<div style='margin-top: 1.2rem;'>", unsafe_allow_html=True)
         if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="top_to_setup"):
             st.session_state.view = "setup"
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     df_all = db.get_games_data()
 
