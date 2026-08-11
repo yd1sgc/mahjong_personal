@@ -82,11 +82,12 @@ def show_game():
                 sign = "+" if diff >= 0 else ""
                 color_name = "blue" if diff >= 0 else "red"
                 label = f"{name_label}\n\n:{color_name}[{sign}{diff:,}]"
-                st.button(label, key=f"p_{p}", use_container_width=True)
             else:
-                if st.button(f"{name_label}\n\n{score:,}", key=f"p_{p}", use_container_width=True):
-                    st.session_state.diff_target = None if is_diff_base else p
-                    st.rerun()
+                label = f"{name_label}\n\n{score:,}"
+
+            if st.button(label, key=f"p_{p}", use_container_width=True):
+                st.session_state.diff_target = None if is_diff_base else p
+                st.rerun()
 
         with col_f:
             label_f = "副\n✓" if is_furo else "副\n　"
