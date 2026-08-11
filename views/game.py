@@ -49,13 +49,14 @@ def show_game():
         st.caption("下書き保存失敗（通信エラー）")
         st.session_state.pop("draft_save_error", None)
 
-    kyoku_str = f"{game_logic.get_round_name()} {st.session_state.honba}本場"
+    round_name = game_logic.get_round_name()
+    honba_str = f"{st.session_state.honba}本場"
     kyotaku_str = f"供託{st.session_state.riichi_stick}本"
-    diff_text = f"{diff_target} 基準の点差表示中" if diff_target else "　"
-    diff_color = "#888" if diff_target else "transparent"
     st.markdown(
-        f"**{kyoku_str}**　{kyotaku_str}　親: {dealer}"
-        f"<br><small style='color:{diff_color};'>{diff_text}</small>",
+        f"<div style='font-size:16px; font-weight:bold; margin-bottom:4px;'>"
+        f"{round_name} <span style='color:#ffaa00; background:#332200; padding:2px 6px; border-radius:4px;'>{honba_str}</span> "
+        f"<span style='color:#00e5ff; background:#002233; padding:2px 6px; border-radius:4px;'>{kyotaku_str}</span> "
+        f"<span style='font-size:14px; opacity:0.8;'>親: {dealer}</span></div>",
         unsafe_allow_html=True,
     )
 

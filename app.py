@@ -66,8 +66,8 @@ st.markdown("""
 }
 /* divider の余白削減 */
 hr {
-    margin-top: 0.5rem !important;
-    margin-bottom: 0.5rem !important;
+    margin-top: 0.15rem !important;
+    margin-bottom: 0.15rem !important;
 }
 /* スマホ: パディング削減 */
 @media (max-width: 640px) {
@@ -77,7 +77,7 @@ hr {
     }
     [data-testid="stHorizontalBlock"],
     [data-testid="stColumns"] {
-        gap: 0.25rem !important;
+        gap: 0.15rem !important;
     }
     [data-testid="column"],
     [data-testid="stColumn"] {
@@ -94,18 +94,19 @@ hr {
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
   [data-testid="stColumn"]:first-child .stButton > button p {
     margin: 0 !important;
-    line-height: 1.3;
+    line-height: 1.25;
 }
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
   [data-testid="stColumn"]:first-child .stButton > button p:first-child:not(:last-child) {
-    font-size: 13px !important;
-    font-weight: normal !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
     color: inherit !important;
-    opacity: 0.6;
+    opacity: 0.95;
 }
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
   [data-testid="stColumn"]:first-child .stButton > button p:last-child:not(:first-child) {
-    font-size: 18px !important;
+    font-size: 22px !important;
+    font-weight: 800 !important;
 }
 </style>
 """, unsafe_allow_html=True)
