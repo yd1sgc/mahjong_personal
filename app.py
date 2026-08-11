@@ -16,10 +16,15 @@ st.set_page_config(
 st.markdown("""
 <style>
 .stButton > button {
-    min-height: 44px;
-    font-size: 16px;
-    font-weight: bold;
+    min-height: 48px;
+    font-size: 18px !important;
+    font-weight: 700 !important;
     border-radius: 10px;
+    padding: 6px 4px !important;
+}
+.stButton > button p {
+    font-size: 18px !important;
+    font-weight: 700 !important;
 }
 /* 列コンテナ: 折り返しなし・ギャップ縮小 */
 [data-testid="stHorizontalBlock"],
