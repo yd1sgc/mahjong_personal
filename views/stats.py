@@ -5,7 +5,7 @@ import calc
 
 
 def show_stats():
-    c_t1, c_t2 = st.columns([2, 2])
+    c_t1, c_t2 = st.columns([2, 2], vertical_alignment="center")
     with c_t1:
         st.title("成績")
     with c_t2:
