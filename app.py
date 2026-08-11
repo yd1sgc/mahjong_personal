@@ -97,14 +97,14 @@ hr {
     line-height: 1.3;
 }
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
-  [data-testid="stColumn"]:first-child .stButton > button p:first-child {
+  [data-testid="stColumn"]:first-child .stButton > button p:first-child:not(:last-child) {
     font-size: 13px !important;
     font-weight: normal !important;
     color: inherit !important;
     opacity: 0.6;
 }
 [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3))
-  [data-testid="stColumn"]:first-child .stButton > button p:last-child {
+  [data-testid="stColumn"]:first-child .stButton > button p:last-child:not(:first-child) {
     font-size: 18px !important;
 }
 </style>
