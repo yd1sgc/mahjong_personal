@@ -68,16 +68,44 @@ def show_stats():
             use_container_width=True, hide_index=True,
         )
 
-    # ── 詳細成績テーブル ──────────────────────────────────
+    # ── 詳細成績テーブル (4タブ分割) ─────────────────────────
     if not round_stats.empty:
         st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
-        round_cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "副露率", "リーチ率",
-                      "リーチ成功率", "テンパイ率", "平均和了", "平均放銃"]
-        show_cols = [c for c in round_cols if c in round_stats.columns]
-        st.dataframe(
-            round_stats[show_cols].sort_values("和了率", ascending=False),
-            use_container_width=True, hide_index=True,
-        )
+        tab_basic, tab_houjyu, tab_riichi, tab_furo = st.tabs([
+            "基本・収支", "放銃分析", "立直分析", "副露・ダマ分析"
+        ])
+
+        with tab_basic:
+            cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "和銃差", "テンパイ率", "ノーテン罰符収支", "平均和了", "平均放銃"]
+            show_cols = [c for c in cols if c in round_stats.columns]
+            st.dataframe(
+                round_stats[show_cols].sort_values("和了率", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+
+        with tab_houjyu:
+            cols = ["名前", "局数", "放銃率", "被リーチ放銃率", "被副露放銃率", "被ダマ放銃率", "平均放銃"]
+            show_cols = [c for c in cols if c in round_stats.columns]
+            st.dataframe(
+                round_stats[show_cols].sort_values("放銃率", ascending=True),
+                use_container_width=True, hide_index=True,
+            )
+
+        with tab_riichi:
+            cols = ["名前", "局数", "リーチ率", "立直和了率", "立直放銃率"]
+            show_cols = [c for c in cols if c in round_stats.columns]
+            st.dataframe(
+                round_stats[show_cols].sort_values("立直和了率", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+
+        with tab_furo:
+            cols = ["名前", "局数", "副露率", "副露和了率", "副露放銃率", "ダマ和了率"]
+            show_cols = [c for c in cols if c in round_stats.columns]
+            st.dataframe(
+                round_stats[show_cols].sort_values("副露率", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
 
     # ── 総合ポイント推移グラフ ────────────────────────────
     st.divider()
