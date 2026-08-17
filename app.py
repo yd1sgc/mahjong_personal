@@ -198,6 +198,11 @@ def check_auth():
     return False
 
 
+import game_logic
+
+# ── 安全な対局状態コンテナの1回初期化 ──────────────────────────
+game_logic.init_game_container()
+
 # ── ルーター ──────────────────────────────────────────────
 
 view = st.session_state.view
