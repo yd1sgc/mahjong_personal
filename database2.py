@@ -316,6 +316,14 @@ def init_db():
         )''')
 
 
+def clear_cache():
+    """データ更新時に一瞬で古いキャッシュを全消去して最新DBを0秒反映させる安全関数"""
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
+
 def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     rule_json_str = json.dumps(rule_config, ensure_ascii=False) if rule_config else None
@@ -337,6 +345,7 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
                 0, group_id, rule_id, rule_json_str
             ))
             next_id = c.lastrowid
+        clear_cache()
         return next_id
     with _remote_db() as conn:
         c = conn.cursor()
@@ -355,6 +364,7 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
             group_id, rule_id, rule_json_str
         ))
         next_id = c.fetchone()[0]
+    clear_cache()
     return next_id
 
 
