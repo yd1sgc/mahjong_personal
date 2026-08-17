@@ -8,7 +8,8 @@ from contextlib import contextmanager
 from datetime import datetime
 
 IS_LOCAL = st.secrets.get("local_mode", False)
-SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if IS_LOCAL else None
+# テスト開発用データベース（本番mahjong_local.dbを100%保護するための分離ファイル）
+SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_test.db" if IS_LOCAL else None
 
 
 def get_local_connection():

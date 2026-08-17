@@ -113,7 +113,3 @@ if __name__ == "__main__":
     t3.test_zero_sum_4players()
 
     print("ALL TESTS PASSED SUCCESSFULLY!")
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
