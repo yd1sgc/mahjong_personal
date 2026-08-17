@@ -100,8 +100,16 @@ def init_local_db():
             p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
             p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
             p4_name TEXT, p4_score INTEGER, p4_rank INTEGER,
-            is_synced INTEGER DEFAULT 0
+            is_synced INTEGER DEFAULT 0,
+            group_id TEXT DEFAULT 'all',
+            rule_id TEXT DEFAULT 'm_league',
+            applied_rule_json TEXT
         )''')
+        for col_def in [("group_id", "TEXT DEFAULT 'all'"), ("rule_id", "TEXT DEFAULT 'm_league'"), ("applied_rule_json", "TEXT")]:
+            try:
+                c.execute(f"ALTER TABLE games ADD COLUMN {col_def[0]} {col_def[1]}")
+            except Exception:
+                pass
         c.execute('''CREATE TABLE IF NOT EXISTS rounds (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             game_id INTEGER,
@@ -267,8 +275,14 @@ def init_db():
             p1_name TEXT, p1_score INTEGER, p1_rank INTEGER,
             p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
             p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
-            p4_name TEXT, p4_score INTEGER, p4_rank INTEGER
+            p4_name TEXT, p4_score INTEGER, p4_rank INTEGER,
+            group_id TEXT DEFAULT 'all',
+            rule_id TEXT DEFAULT 'm_league',
+            applied_rule_json TEXT
         )''')
+        c.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS group_id TEXT DEFAULT 'all'")
+        c.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS rule_id TEXT DEFAULT 'm_league'")
+        c.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS applied_rule_json TEXT")
         c.execute('''CREATE TABLE IF NOT EXISTS rounds (
             id SERIAL PRIMARY KEY,
             game_id INTEGER,
@@ -291,8 +305,9 @@ def init_db():
         )''')
 
 
-def save_game(date_str, scores, players, local=False):
+def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    rule_json_str = json.dumps(rule_config, ensure_ascii=False) if rule_config else None
     if local:
         with _local_db() as conn:
             c = conn.cursor()
@@ -303,14 +318,14 @@ def save_game(date_str, scores, players, local=False):
                 p2_name, p2_score, p2_rank,
                 p3_name, p3_score, p3_rank,
                 p4_name, p4_score, p4_rank,
-                is_synced
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+                is_synced, group_id, rule_id, applied_rule_json
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
                 next_id, date_str,
                 sorted_p[0][0], sorted_p[0][1], 1,
                 sorted_p[1][0], sorted_p[1][1], 2,
                 sorted_p[2][0], sorted_p[2][1], 3,
                 sorted_p[3][0], sorted_p[3][1], 4,
-                0
+                0, group_id, rule_id, rule_json_str
             ))
         return next_id
     with _remote_db() as conn:
@@ -321,13 +336,15 @@ def save_game(date_str, scores, players, local=False):
             p1_name, p1_score, p1_rank,
             p2_name, p2_score, p2_rank,
             p3_name, p3_score, p3_rank,
-            p4_name, p4_score, p4_rank
-        ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
+            p4_name, p4_score, p4_rank,
+            group_id, rule_id, applied_rule_json
+        ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
             next_id, date_str,
             sorted_p[0][0], sorted_p[0][1], 1,
             sorted_p[1][0], sorted_p[1][1], 2,
             sorted_p[2][0], sorted_p[2][1], 3,
-            sorted_p[3][0], sorted_p[3][1], 4
+            sorted_p[3][0], sorted_p[3][1], 4,
+            group_id, rule_id, rule_json_str
         ))
     return next_id
 

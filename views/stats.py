@@ -80,6 +80,15 @@ def show_stats():
     df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
     rows = []
     for _, row in df_sorted.iterrows():
+        cfg = None
+        rule_json = row.get("applied_rule_json")
+        if pd.notna(rule_json) and isinstance(rule_json, str) and rule_json.strip():
+            try:
+                import json
+                cfg = json.loads(rule_json)
+            except Exception:
+                cfg = None
+
         for i in range(1, 5):
             name = row.get(f"p{i}_name")
             if pd.isna(name) or not str(name).strip():
@@ -92,7 +101,7 @@ def show_stats():
                 "name": str(name).strip(),
                 "score": score,
                 "rank": rank,
-                "pt": calc.calc_special_point(score, rank),
+                "pt": calc.calc_special_point(score, rank, rule_config=cfg),
             })
     df_results = pd.DataFrame(rows)
 

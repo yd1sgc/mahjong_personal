@@ -14,6 +14,28 @@ def _show_rules_expander():
 
 
 def show_game():
+    # 適用グループ・ルール情報のキャプション表示
+    grp_id = st.session_state.get("current_group_id", "all")
+    r_cfg = st.session_state.get("current_rule_config", {})
+    
+    grp_name = "全体"
+    if grp_id != "all":
+        groups = db.get_groups()
+        grp_name = next((g["group_name"] for g in groups if g["group_id"] == grp_id), "グループ")
+    
+    rule_name = st.session_state.get("current_rule_id", "Mリーグルール")
+    rules = db.get_rules()
+    r_obj = next((r for r in rules if r["rule_id"] == rule_name), None)
+    if r_obj:
+        rule_name = r_obj["rule_name"]
+
+    init_s = r_cfg.get("init_score", 25000)
+    ret_s = r_cfg.get("return_score", 30000)
+    uma = r_cfg.get("uma", [50, 10, -10, -30])
+    uma_str = f"{uma[0]:+}, {uma[1]:+}, {uma[2]:+}, {uma[3]:+}"
+
+    st.caption(f"👥 卓: **{grp_name}** | ⚙️ ルール: **{rule_name}** ({init_s:,}点持/{ret_s:,}点返 | ウマ:[{uma_str}])")
+
     idx = st.session_state.round_idx
     top_score = max(st.session_state.scores.values())
 
@@ -478,9 +500,10 @@ def show_endgame():
 
     sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
 
+    r_config = st.session_state.get("current_rule_config")
     st.subheader("最終結果")
     for i, p in enumerate(sorted_p):
-        pt = calc.calc_special_point(scores[p], i + 1)
+        pt = calc.calc_special_point(scores[p], i + 1, rule_config=r_config)
         st.write(f"{i + 1}位: **{p}**　{scores[p]:,}点　({pt:+.1f}pt)")
 
     st.divider()
@@ -490,7 +513,12 @@ def show_endgame():
             st.session_state.scores = scores
             st.session_state.riichi_stick = 0
             date_str = datetime.now().strftime("%Y-%m-%d")
-            game_id = db.save_game(date_str, scores, players, local=db.IS_LOCAL)
+            game_id = db.save_game(
+                date_str, scores, players, local=db.IS_LOCAL,
+                rule_id=st.session_state.get("current_rule_id", "m_league"),
+                group_id=st.session_state.get("current_group_id", "all"),
+                rule_config=r_config
+            )
             for r in st.session_state.round_history:
                 db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
                               r["score"], r["furo"], r["riichi"],
@@ -500,7 +528,7 @@ def show_endgame():
             db.get_rounds_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
-                 "pt": calc.calc_special_point(scores[p], i + 1)}
+                 "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config)}
                 for i, p in enumerate(sorted_p)
             ]
             st.session_state.last_result = {"game_id": game_id, "date": date_str, "rows": result_rows}

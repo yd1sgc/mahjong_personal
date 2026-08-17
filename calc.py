@@ -108,6 +108,16 @@ def analyze_stats(df_games, df_rounds):
     } for name in valid_players}
 
     for _, row in df_games.iterrows():
+        # 対局ごとのルールスナップショット解読
+        cfg = None
+        rule_json = row.get('applied_rule_json')
+        if pd.notna(rule_json) and isinstance(rule_json, str) and rule_json.strip():
+            try:
+                import json
+                cfg = json.loads(rule_json)
+            except Exception:
+                cfg = None
+
         for i in range(1, 5):
             name = row.get(f'p{i}_name')
             if name not in game_stats:
@@ -115,7 +125,7 @@ def analyze_stats(df_games, df_rounds):
             score = row.get(f'p{i}_score', 25000)
             rank = row.get(f'p{i}_rank', 0)
             game_stats[name]["試合数"] += 1
-            game_stats[name]["総合pt"] += calc_special_point(score, rank)
+            game_stats[name]["総合pt"] += calc_special_point(score, rank, rule_config=cfg)
             game_stats[name]["オカなし総合pt"] += calc_oka_nashi_point(score, rank)
             if rank > 0:
                 game_stats[name]["順位合計"] += rank
