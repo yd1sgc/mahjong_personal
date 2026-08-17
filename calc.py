@@ -6,14 +6,9 @@ from decimal import Decimal, ROUND_HALF_UP
 # ==========================================
 
 # 1. 基準点（返し点）
-# 30000点返しなら 30000, 25000点返しなら 25000
 RETURN_POINT = 30000
 
 # 2. 順位点（ウマ + オカ）
-# [1位, 2位, 3位, 4位] のポイント
-# Mリーグ準拠: {1: 50, 2: 10, 3: -10, 4: -30}
-# 一般的な10-30: {1: 40, 2: 10, 3: -10, 4: -20}
-# ゴットー(5-10): {1: 30, 2: 5, 3: -5, 4: -10}
 UMA_SETTINGS = {
     1: 50,
     2: 10,
@@ -52,6 +47,7 @@ def calculate_score(han, fu, is_dealer, is_tsumo):
     else:
         return (round_up(base * 6) if is_dealer else round_up(base * 4)), 0, 0
 
+
 def calc_oka_nashi_point(score, rank):
     """オカなし版（配給原点返し + 1位からオカ分を除外、ゼロサム維持）"""
     oka = (RETURN_POINT - INIT_SCORE) * 4 / 1000  # = 20pt
@@ -79,19 +75,13 @@ def calc_special_point(score, rank, rule_config=None):
 
     # 素点の計算: (持ち点 - 返し点) / 1000
     base_pt = (score - RETURN_POINT) / 1000
-    
-    # 設定されたウマを取得
     uma_pt = UMA_SETTINGS.get(rank, 0)
-    
-    # 合計
     total = base_pt + uma_pt
-    
-    # 整数丸め設定がある場合
     if ROUND_INTEGER:
         return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
     else:
-        # 小数点第1位まで
         return round(total, 1)
+
 
 def analyze_stats(df_games, df_rounds):
     """成績計算。(ゲーム集計DF, ラウンド集計DF, 詳細記録試合数) を返す"""
@@ -162,7 +152,6 @@ def analyze_stats(df_games, df_rounds):
     if n_round_games == 0:
         return df_game_stats, pd.DataFrame(), 0
 
-    # game_id → 参加プレイヤーセット のマップ（局数の誤計上を防ぐ）
     game_players_map = {}
     for _, game_row in df_games_with_rounds.iterrows():
         gid = game_row['game_id']
@@ -174,9 +163,12 @@ def analyze_stats(df_games, df_rounds):
 
     round_stats = {name: {
         "局数": 0, "和了": 0, "ツモ": 0, "放銃": 0, "副露": 0,
-        "リーチ": 0, "リーチ後和了": 0,
+        "リーチ": 0, "リーチ後和了": 0, "リーチ後放銃": 0,
+        "副露和了": 0, "副露放銃": 0, "ダマ和了": 0,
+        "立直和了点": 0, "副露和了点": 0, "ダマ和了点": 0,
+        "被リーチ放銃": 0, "被副露放銃": 0, "被ダマ放銃": 0,
         "和了点": 0, "放銃点": 0,
-        "流局": 0, "テンパイ": 0, "チョンボ": 0,
+        "流局": 0, "テンパイ": 0, "ノーテン罰符収支": 0, "チョンボ": 0,
     } for name in valid_players}
 
     has_riichi = 'riichi_names' in df_rounds.columns
@@ -190,11 +182,15 @@ def analyze_stats(df_games, df_rounds):
         loser = r.get('loser', '') or ''
         win_type = (r.get('win_type', '') or '') if has_win_type else ''
 
-        # チョンボは局数に含めず別カウント
         if win_type == 'chombo':
             if winner in round_stats:
                 round_stats[winner]["チョンボ"] += 1
             continue
+
+        furo_players = []
+        f_names = r.get('furo_names', '')
+        if pd.notna(f_names) and isinstance(f_names, str):
+            furo_players = [x for x in f_names.split(',') if x]
 
         riichi_players = []
         if has_riichi:
@@ -202,39 +198,71 @@ def analyze_stats(df_games, df_rounds):
             if pd.notna(r_names) and isinstance(r_names, str):
                 riichi_players = [x for x in r_names.split(',') if x]
 
-        # 流局判定: win_type が ryukyoku、または旧データ（winner/loser が両方空）
         is_ryukyoku = win_type == 'ryukyoku' or (not winner and not loser and win_type == '')
 
         if is_ryukyoku:
             tenpai_str = r.get('tenpai_names', '') or ''
             tenpai_players = [x for x in tenpai_str.split(',') if x] if isinstance(tenpai_str, str) else []
 
+            active_tenpai = [p for p in tenpai_players if p in game_players]
+            active_noten = [p for p in game_players if p not in tenpai_players]
+            n_t, n_n = len(active_tenpai), len(active_noten)
+            if 0 < n_t < 4:
+                get_pt = 3000 // n_t
+                pay_pt = 3000 // n_n
+                for tp in active_tenpai:
+                    if tp in round_stats:
+                        round_stats[tp]["ノーテン罰符収支"] += get_pt
+                for np in active_noten:
+                    if np in round_stats:
+                        round_stats[np]["ノーテン罰符収支"] -= pay_pt
+
         for m in round_stats.keys():
             if m not in game_players:
                 continue
             round_stats[m]["局数"] += 1
-            f_names = r.get('furo_names', '')
-            if pd.notna(f_names) and isinstance(f_names, str) and m in f_names:
+            if m in furo_players:
                 round_stats[m]["副露"] += 1
             if m in riichi_players:
                 round_stats[m]["リーチ"] += 1
-                if m == winner:
-                    round_stats[m]["リーチ後和了"] += 1
             if is_ryukyoku:
                 round_stats[m]["流局"] += 1
                 if m in tenpai_players:
                     round_stats[m]["テンパイ"] += 1
 
         if winner and winner in round_stats:
+            score = r.get('score', 0)
             round_stats[winner]["和了"] += 1
-            round_stats[winner]["和了点"] += r.get('score', 0)
-            # ツモ判定: win_type=='tsumo' または 旧データ(loserが空)で推定
+            round_stats[winner]["和了点"] += score
             is_tsumo = win_type == 'tsumo' or (win_type in ('', None) and not loser)
             if is_tsumo:
                 round_stats[winner]["ツモ"] += 1
+
+            if winner in riichi_players:
+                round_stats[winner]["リーチ後和了"] += 1
+                round_stats[winner]["立直和了点"] += score
+            if winner in furo_players:
+                round_stats[winner]["副露和了"] += 1
+                round_stats[winner]["副露和了点"] += score
+            if winner not in riichi_players and winner not in furo_players:
+                round_stats[winner]["ダマ和了"] += 1
+                round_stats[winner]["ダマ和了点"] += score
+
         if loser and loser in round_stats:
             round_stats[loser]["放銃"] += 1
             round_stats[loser]["放銃点"] += r.get('score', 0)
+
+            if loser in riichi_players:
+                round_stats[loser]["リーチ後放銃"] += 1
+            if loser in furo_players:
+                round_stats[loser]["副露放銃"] += 1
+
+            if winner in riichi_players:
+                round_stats[loser]["被リーチ放銃"] += 1
+            elif winner in furo_players:
+                round_stats[loser]["被副露放銃"] += 1
+            else:
+                round_stats[loser]["被ダマ放銃"] += 1
 
     round_data = []
     for n, d in round_stats.items():
@@ -242,22 +270,40 @@ def analyze_stats(df_games, df_rounds):
         if k == 0:
             continue
         r_count = d["リーチ"]
+        f_count = d["副露"]
+        w_count = d["和了"]
+        h_count = d["放銃"]
+
+        avg_win = round(d["和了点"] / w_count) if w_count else 0
+        avg_lose = round(d["放銃点"] / h_count) if h_count else 0
+        efficiency = round(avg_win / avg_lose, 2) if (avg_win and avg_lose) else 0.0
+
         row = {
             "名前": n,
             "局数": k,
-            "和了率": round(d["和了"] / k * 100, 1),
-            "放銃率": round(d["放銃"] / k * 100, 1),
-            "副露率": round(d["副露"] / k * 100, 1),
-            "リーチ率": round(d["リーチ"] / k * 100, 1),
-            "リーチ成功率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0,
-            "平均和了": round(d["和了点"] / d["和了"]) if d["和了"] else 0,
-            "平均放銃": round(d["放銃点"] / d["放銃"]) if d["放銃"] else 0,
-            "ツモ率": round(d["ツモ"] / d["和了"] * 100, 1) if d["和了"] else 0.0,
+            "和了率": round(w_count / k * 100, 1),
+            "ツモ率": round(d["ツモ"] / w_count * 100, 1) if w_count else 0.0,
+            "放銃率": round(h_count / k * 100, 1),
+            "和銃差": round((w_count - h_count) / k * 100, 1),
+            "テンパイ率": round(d["テンパイ"] / d["流局"] * 100, 1) if d["流局"] > 0 else 0.0,
+            "ノーテン罰符収支": d["ノーテン罰符収支"],
+            "副露率": round(f_count / k * 100, 1),
+            "リーチ率": round(r_count / k * 100, 1),
+            "立直和了率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0.0,
+            "立直放銃率": round(d["リーチ後放銃"] / r_count * 100, 1) if r_count else 0.0,
+            "副露和了率": round(d["副露和了"] / f_count * 100, 1) if f_count else 0.0,
+            "副露放銃率": round(d["副露放銃"] / f_count * 100, 1) if f_count else 0.0,
+            "ダマ和了率": round(d["ダマ和了"] / w_count * 100, 1) if w_count else 0.0,
+            "被リーチ放銃率": round(d["被リーチ放銃"] / h_count * 100, 1) if h_count else 0.0,
+            "被副露放銃率": round(d["被副露放銃"] / h_count * 100, 1) if h_count else 0.0,
+            "被ダマ放銃率": round(d["被ダマ放銃"] / h_count * 100, 1) if h_count else 0.0,
+            "平均和了": avg_win,
+            "平均放銃": avg_lose,
+            "立直平均打点": round(d["立直和了点"] / d["リーチ後和了"]) if d["リーチ後和了"] else 0,
+            "副露平均打点": round(d["副露和了点"] / d["副露和了"]) if d["副露和了"] else 0,
+            "ダマ平均打点": round(d["ダマ和了点"] / d["ダマ和了"]) if d["ダマ和了"] else 0,
+            "打点効率": efficiency,
         }
-        if d["流局"] > 0:
-            row["テンパイ率"] = round(d["テンパイ"] / d["流局"] * 100, 1)
-        else:
-            row["テンパイ率"] = 0.0
         if d["チョンボ"] > 0:
             row["チョンボ数"] = d["チョンボ"]
         round_data.append(row)
