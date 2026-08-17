@@ -40,59 +40,20 @@ def show_setup():
             st.rerun()
     with ch2:
         st.markdown("### 対局メンバー・ルール選択")
-<<<<<<< Updated upstream
-=======
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = db.get_groups()
     rules = db.get_rules()
     rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
 
-    group_options = [{"group_id": "all", "group_name": "全メンバー (指定なし)", "members": MEMBERS, "default_rule_id": "m_league"}] + groups
+    formatted_groups = []
+    for g in groups:
+        d_id = g.get("display_id", "G--")
+        g_copy = dict(g)
+        g_copy["group_name_disp"] = f"[{d_id}] {g['group_name']}"
+        formatted_groups.append(g_copy)
 
-    if "selected_group_id" not in st.session_state:
-        st.session_state.selected_group_id = "all"
-    if "active_rule_id" not in st.session_state:
-        st.session_state.active_rule_id = rules[0]["rule_id"] if rules else "m_league"
-
-    col_g, col_r = st.columns(2)
-    with col_g:
-        grp_names = [g["group_name"] for g in group_options]
-        cur_g_idx = next((idx for idx, g in enumerate(group_options) if g["group_id"] == st.session_state.selected_group_id), 0)
-        sel_g_name = st.selectbox("👥 グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
-        
-        chosen_group = next((g for g in group_options if g["group_name"] == sel_g_name), group_options[0])
-        if chosen_group["group_id"] != st.session_state.selected_group_id:
-            st.session_state.selected_group_id = chosen_group["group_id"]
-            if chosen_group.get("default_rule_id") and chosen_group["default_rule_id"] in rule_map:
-                st.session_state.active_rule_id = chosen_group["default_rule_id"]
-            st.rerun()
-
-        if st.button("👥 グループ管理へ", use_container_width=True, key="to_grp_mgmt_btn"):
-            st.session_state.view = "group_manage"
-            st.rerun()
-
-    with col_r:
-        r_ids = [r["rule_id"] for r in rules]
-        cur_r_idx = r_ids.index(st.session_state.active_rule_id) if st.session_state.active_rule_id in r_ids else 0
-        sel_r_id = st.selectbox("⚙️ 適用ルール", options=r_ids, index=cur_r_idx, format_func=lambda x: rule_map.get(x, x), key="setup_rule_select")
-        if sel_r_id != st.session_state.active_rule_id:
-            st.session_state.active_rule_id = sel_r_id
-            st.rerun()
-
-        if st.button("⚙️ ルール作成へ", use_container_width=True, key="to_rule_mgmt_btn"):
-            st.session_state.view = "rule_manage"
-            st.rerun()
-
-    st.divider()
->>>>>>> Stashed changes
-
-    # ── グループ＆ルール選択 ──────────────────────────────────
-    groups = db.get_groups()
-    rules = db.get_rules()
-    rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
-
-    group_options = [{"group_id": "all", "group_name": "全メンバー (グループ指定なし)", "members": MEMBERS, "default_rule_id": "m_league"}] + groups
+    group_options = [{"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "m_league"}] + formatted_groups
 
     # セッション状態の初期化
     if "selected_group_id" not in st.session_state:
@@ -102,11 +63,11 @@ def show_setup():
 
     col_g, col_r = st.columns(2)
     with col_g:
-        grp_names = [g["group_name"] for g in group_options]
+        grp_names = [g["group_name_disp"] for g in group_options]
         cur_g_idx = next((idx for idx, g in enumerate(group_options) if g["group_id"] == st.session_state.selected_group_id), 0)
-        sel_g_name = st.selectbox("👥 グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
+        sel_g_name_disp = st.selectbox("👥 グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
         
-        chosen_group = next((g for g in group_options if g["group_name"] == sel_g_name), group_options[0])
+        chosen_group = next((g for g in group_options if g["group_name_disp"] == sel_g_name_disp), group_options[0])
         if chosen_group["group_id"] != st.session_state.selected_group_id:
             st.session_state.selected_group_id = chosen_group["group_id"]
             # グループ変更時にデフォルトルールを自動適用
@@ -146,19 +107,24 @@ def show_setup():
     st.divider()
 
     # ── メンバーボタン一覧 ───────────────────────────────────
-    target_members = chosen_group.get("members", MEMBERS)
-    if not target_members:
-        target_members = MEMBERS
+    all_members = db.get_all_members()
+    target_members = chosen_group.get("members", [])
+    if chosen_group["group_id"] == "all" or not target_members:
+        display_members = [m["member_name"] for m in all_members]
+    else:
+        show_all = st.checkbox("全登録メンバーを表示する", value=False, key="setup_show_all_mems")
+        display_members = [m["member_name"] for m in all_members] if show_all else target_members
 
-    show_all = st.checkbox("全登録メンバーを表示する", value=(chosen_group["group_id"] == "all"), key="setup_show_all_mems")
-    display_members = MEMBERS if show_all else target_members
+    # ID表記付きマップ
+    mem_id_map = {m["member_name"]: f"#{m['member_id']:02d}" for m in all_members}
 
     grid = st.columns(2)
     for i, m in enumerate(display_members):
         with grid[i % 2]:
             is_sel = m in selected
             order = selected.index(m) + 1 if is_sel else None
-            label = f"[{order}] {m}" if is_sel else m
+            id_prefix = f"({mem_id_map[m]}) " if m in mem_id_map else ""
+            label = f"[{order}] {id_prefix}{m}" if is_sel else f"{id_prefix}{m}"
             if st.button(label, key=f"sel_{m}",
                          type="primary" if is_sel else "secondary",
                          use_container_width=True):
@@ -168,12 +134,14 @@ def show_setup():
                     selected.append(m)
                 st.rerun()
 
-    guest_name = st.text_input("➕ ゲストを追加", placeholder="ゲスト名を入力してEnter",
+    guest_name = st.text_input("➕ メンバーその場追加", placeholder="メンバー名を入力して追加",
                                key="guest_input")
     if guest_name:
-        if st.button("ゲストを追加する",
-                     disabled=(len(selected) >= 4 or guest_name in selected)):
-            selected.append(guest_name)
+        if st.button("メンバーを追加する",
+                     disabled=(guest_name in selected)):
+            db.add_member(guest_name.strip())
+            if len(selected) < 4 and guest_name.strip() not in selected:
+                selected.append(guest_name.strip())
             st.rerun()
 
     st.divider()
@@ -187,17 +155,10 @@ def show_setup():
             active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
             init_score_val = active_cfg.get("init_score", INIT_SCORE)
             st.session_state.players = list(selected)
-<<<<<<< Updated upstream
-            # 選択中のルールの配給原点 (init_score) を使用
-            active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
-            init_score_val = active_cfg.get("init_score", INIT_SCORE)
-            st.session_state.scores = {p: init_score_val for p in selected}
-=======
             st.session_state.scores = {p: init_score_val for p in selected}
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
             st.session_state.current_rule_config = active_cfg
->>>>>>> Stashed changes
             st.session_state.game_active = True
             st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
@@ -205,10 +166,7 @@ def show_setup():
             st.rerun()
     with c2:
         if st.button("結果のみ入力", disabled=not ready, use_container_width=True):
-<<<<<<< Updated upstream
-=======
             active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
->>>>>>> Stashed changes
             st.session_state.players = list(selected)
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id

@@ -169,6 +169,16 @@ def init_local_db():
             member_name TEXT NOT NULL,
             PRIMARY KEY (group_id, member_name)
         )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS members (
+            member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_name TEXT NOT NULL UNIQUE
+        )''')
+        # 初期メンバーの登録（未登録の場合）
+        c.execute("SELECT COUNT(*) FROM members")
+        if c.fetchone()[0] == 0:
+            from constants import MEMBERS
+            for m in MEMBERS:
+                c.execute("INSERT OR IGNORE INTO members (member_name) VALUES (?)", (m,))
 
 
 def check_connectivity():
@@ -312,41 +322,39 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
     if local:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
-            next_id = c.fetchone()[0]
-            c.execute('''INSERT INTO games (game_id, date,
+            c.execute('''INSERT INTO games (date,
                 p1_name, p1_score, p1_rank,
                 p2_name, p2_score, p2_rank,
                 p3_name, p3_score, p3_rank,
                 p4_name, p4_score, p4_rank,
                 is_synced, group_id, rule_id, applied_rule_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
-                next_id, date_str,
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+                date_str,
                 sorted_p[0][0], sorted_p[0][1], 1,
                 sorted_p[1][0], sorted_p[1][1], 2,
                 sorted_p[2][0], sorted_p[2][1], 3,
                 sorted_p[3][0], sorted_p[3][1], 4,
                 0, group_id, rule_id, rule_json_str
             ))
+            next_id = c.lastrowid
         return next_id
     with _remote_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
-        next_id = c.fetchone()[0]
-        c.execute('''INSERT INTO games (game_id, date,
+        c.execute('''INSERT INTO games (date,
             p1_name, p1_score, p1_rank,
             p2_name, p2_score, p2_rank,
             p3_name, p3_score, p3_rank,
             p4_name, p4_score, p4_rank,
             group_id, rule_id, applied_rule_json
-        ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
-            next_id, date_str,
+        ) VALUES (%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s) RETURNING game_id''', (
+            date_str,
             sorted_p[0][0], sorted_p[0][1], 1,
             sorted_p[1][0], sorted_p[1][1], 2,
             sorted_p[2][0], sorted_p[2][1], 3,
             sorted_p[3][0], sorted_p[3][1], 4,
             group_id, rule_id, rule_json_str
         ))
+        next_id = c.fetchone()[0]
     return next_id
 
 
@@ -708,19 +716,20 @@ def set_default_rule(rule_id):
 # ── グループ管理関数 ────────────────────────────────────────
 
 def get_groups():
-    """登録済みグループの一覧を取得 (メンバーリスト付き)"""
+    """登録済みグループの一覧を取得 (メンバーリスト付き、G01/G02等の表示用ID追加)"""
     if not IS_LOCAL:
         return []
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT group_id, group_name, default_rule_id FROM member_groups ORDER BY group_name")
+            c.execute("SELECT group_id, group_name, default_rule_id FROM member_groups ORDER BY rowid ASC, group_name ASC")
             group_rows = c.fetchall()
             groups = []
-            for g_id, g_name, r_id in group_rows:
+            for idx, (g_id, g_name, r_id) in enumerate(group_rows):
                 c.execute("SELECT member_name FROM group_members WHERE group_id = ? ORDER BY member_name", (g_id,))
                 members = [m[0] for m in c.fetchall()]
                 groups.append({
+                    "display_id": f"G{idx + 1:02d}",
                     "group_id": g_id,
                     "group_name": g_name,
                     "default_rule_id": r_id,
@@ -760,5 +769,55 @@ def delete_group(group_id):
         c = conn.cursor()
         c.execute("DELETE FROM member_groups WHERE group_id = ?", (group_id,))
         c.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+
+
+# ── メンバーマスター管理関数 ──────────────────────────────
+
+def get_all_members():
+    """全メンバーを取得 (ID順)"""
+    if not IS_LOCAL:
+        from constants import MEMBERS
+        return [{"member_id": i + 1, "member_name": m} for i, m in enumerate(MEMBERS)]
+    try:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT member_id, member_name FROM members ORDER BY member_id ASC")
+            rows = c.fetchall()
+            if not rows:
+                from constants import MEMBERS
+                for m in MEMBERS:
+                    c.execute("INSERT OR IGNORE INTO members (member_name) VALUES (?)", (m,))
+                c.execute("SELECT member_id, member_name FROM members ORDER BY member_id ASC")
+                rows = c.fetchall()
+            return [{"member_id": r[0], "member_name": r[1]} for r in rows]
+    except Exception:
+        from constants import MEMBERS
+        return [{"member_id": i + 1, "member_name": m} for i, m in enumerate(MEMBERS)]
+
+
+def add_member(member_name):
+    """新規メンバーを追加"""
+    if not IS_LOCAL or not member_name or not str(member_name).strip():
+        return False
+    name = str(member_name).strip()
+    try:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute("INSERT INTO members (member_name) VALUES (?)", (name,))
+            return True
+    except sqlite3.IntegrityError:
+        return False
+    except Exception:
+        return False
+
+
+def delete_member(member_id):
+    """メンバーの削除"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM members WHERE member_id = ?", (member_id,))
+
 
 
