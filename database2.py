@@ -646,17 +646,52 @@ def import_games_from_df(df):
 
 # ── ルール管理関数 ─────────────────────────────────────────
 
+OFFICIAL_PRESETS = [
+    {
+        "rule_id": "preset_m_league",
+        "display_id": "PRESET-01",
+        "rule_name": "Mリーグルール",
+        "is_default": 0,
+        "is_official": True,
+        "config": {
+            "basic": {"player_count": 4, "init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30], "oka_type": "top_takes_all", "rate_note": "1000点＝1.0pt", "rounding_type": "五捨六入"},
+            "detail": {"kuitan": True, "atozuke": True, "aka_dora": "3枚", "dora_setting": "all", "kuikae": "forbidden", "tobi_end": "none", "west_extension": "none", "agari_yame": True, "renchan_rule": "tenpai", "dubron": "atama_hane", "pao": True, "chombo_rule": "mangan_pay", "house_notes": "Mリーグ公式規則準拠"}
+        }
+    },
+    {
+        "rule_id": "preset_standard_ari",
+        "display_id": "PRESET-02",
+        "rule_name": "一般アリアリ標準",
+        "is_default": 0,
+        "is_official": True,
+        "config": {
+            "basic": {"player_count": 4, "init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30], "oka_type": "top_takes_all", "rate_note": "1000点＝1.0pt (×0.2)", "rounding_type": "五捨六入"},
+            "detail": {"kuitan": True, "atozuke": True, "aka_dora": "3枚", "dora_setting": "all", "kuikae": "forbidden", "tobi_end": "under_zero", "west_extension": "under_30000", "agari_yame": True, "renchan_rule": "tenpai", "dubron": "atama_hane", "pao": True, "chombo_rule": "mangan_pay", "house_notes": "一般的なセット麻雀ルール"}
+        }
+    },
+    {
+        "rule_id": "preset_saikouike",
+        "display_id": "PRESET-03",
+        "rule_name": "最高位戦公式ルール",
+        "is_default": 0,
+        "is_official": True,
+        "config": {
+            "basic": {"player_count": 4, "init_score": 30000, "return_score": 30000, "uma": [30, 10, -10, -30], "oka_type": "none", "rate_note": "オカなし", "rounding_type": "五捨六入"},
+            "detail": {"kuitan": True, "atozuke": True, "aka_dora": "なし", "dora_setting": "all", "kuikae": "forbidden", "tobi_end": "none", "west_extension": "none", "agari_yame": False, "renchan_rule": "tenpai", "dubron": "atama_hane", "pao": True, "chombo_rule": "mangan_pay", "house_notes": "最高位戦日本プロ麻雀協会公式ルール"}
+        }
+    }
+]
+
+
+def get_official_presets():
+    return OFFICIAL_PRESETS
+
+
 def get_rules():
-    """登録済みルールの一覧をリストで取得"""
+    """登録済みルールの一覧をリストで取得（R01, R02... の display_id を付与）"""
     default_fallback = [
-        {"rule_id": "m_league", "rule_name": "Mリーグルール", "is_default": 1,
-         "config": {"init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30]}},
-        {"rule_id": "standard_10_30", "rule_name": "一般10-30", "is_default": 0,
-         "config": {"init_score": 25000, "return_score": 30000, "uma": [40, 10, -10, -20]}},
-        {"rule_id": "gotto_5_10", "rule_name": "ゴットー (5-10)", "is_default": 0,
-         "config": {"init_score": 25000, "return_score": 30000, "uma": [30, 5, -5, -10]}},
-        {"rule_id": "no_uma_no_oka", "rule_name": "ノーウマ・オカなし", "is_default": 0,
-         "config": {"init_score": 30000, "return_score": 30000, "uma": [0, 0, 0, 0]}},
+        {"rule_id": "m_league", "display_id": "R01", "rule_name": "マイ標準アリアリ", "is_default": 1, "is_official": False,
+         "config": {"basic": {"init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30]}, "detail": {}}},
     ]
     if not IS_LOCAL:
         return default_fallback
@@ -664,20 +699,22 @@ def get_rules():
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT rule_id, rule_name, is_default, config_json FROM rules ORDER BY is_default DESC, rule_name")
+            c.execute("SELECT rule_id, rule_name, is_default, config_json FROM rules ORDER BY is_default DESC, rule_id")
             rows = c.fetchall()
             if not rows:
                 return default_fallback
             results = []
-            for r in rows:
+            for idx, r in enumerate(rows):
                 try:
                     cfg = json.loads(r[3])
                 except Exception:
                     cfg = {}
                 results.append({
                     "rule_id": r[0],
+                    "display_id": f"R{idx + 1:02d}",
                     "rule_name": r[1],
                     "is_default": r[2],
+                    "is_official": False,
                     "config": cfg
                 })
             return results
@@ -687,7 +724,7 @@ def get_rules():
 
 def save_rule(rule_id, rule_name, config_dict, is_default=False):
     """ルールの作成・更新"""
-    if not IS_LOCAL:
+    if not IS_LOCAL or rule_id.startswith("preset_"):
         return
     with _local_db() as conn:
         c = conn.cursor()
@@ -706,7 +743,7 @@ def save_rule(rule_id, rule_name, config_dict, is_default=False):
 
 def delete_rule(rule_id):
     """ルールの削除"""
-    if not IS_LOCAL:
+    if not IS_LOCAL or rule_id.startswith("preset_"):
         return
     with _local_db() as conn:
         c = conn.cursor()
@@ -715,12 +752,13 @@ def delete_rule(rule_id):
 
 def set_default_rule(rule_id):
     """デフォルトルールの変更"""
-    if not IS_LOCAL:
+    if not IS_LOCAL or rule_id.startswith("preset_"):
         return
     with _local_db() as conn:
         c = conn.cursor()
         c.execute("UPDATE rules SET is_default = 0")
         c.execute("UPDATE rules SET is_default = 1 WHERE rule_id = ?", (rule_id,))
+
 
 
 # ── グループ管理関数 ────────────────────────────────────────

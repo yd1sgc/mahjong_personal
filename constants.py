@@ -75,3 +75,132 @@ HOUSE_RULES = {
         "恋人より麻雀を優先した場合、1局ごとに-100pt",
     ],
 }
+
+
+DEFAULT_RULE_CONFIG = {
+    "basic": {
+        "player_count": 4,
+        "init_score": 25000,
+        "return_score": 30000,
+        "uma": [50, 10, -10, -30],
+        "oka_type": "top_takes_all",
+        "rate_note": "1000点＝1.0pt",
+        "rounding_type": "goshagokyu",
+    },
+    "detail": {
+        "kuitan": True,
+        "atozuke": True,
+        "aka_dora": "3枚",
+        "dora_setting": "all",
+        "kuikae": "forbidden",
+        "kyushu": "renchan",
+        "sufon": "none",
+        "sujin_riichi": "none",
+        "sukan": "allowed_single",
+        "nagashi_mangan": "mangan_renchan",
+        "dubron": "atama_hane",
+        "furiten_tsumo": True,
+        "tsumoban_none_riichi": False,
+        "ippatsu": True,
+        "renho": "none",
+        "tobi_end": "under_zero",
+        "tobi_penalty_pt": 0,
+        "west_extension": "under_30000",
+        "agari_yame": True,
+        "tenpai_yame": True,
+        "renchan_rule": "tenpai",
+        "yakuman_multiple": True,
+        "kokushi_ankan_win": True,
+        "pao": True,
+        "chombo_rule": "mangan_pay",
+        "chombo_pt": 20,
+        "house_notes": "",
+    }
+}
+
+
+def generate_rule_description(config):
+    """ルール設定辞書から説明文章マップ(HOUSE_RULES互換形式)を動的生成"""
+    if not isinstance(config, dict):
+        return HOUSE_RULES
+
+    # 構造のノーマライズ（旧データ互換）
+    basic = config.get("basic", {})
+    detail = config.get("detail", {})
+
+    init_s = basic.get("init_score", config.get("init_score", 25000))
+    ret_s = basic.get("return_score", config.get("return_score", 30000))
+    uma = basic.get("uma", config.get("uma", [50, 10, -10, -30]))
+    uma_str = f"{uma[0]:+}, {uma[1]:+}, {uma[2]:+}, {uma[3]:+}"
+
+    tobi_type = detail.get("tobi_end", "under_zero")
+    tobi_str = "飛びあり (0点未満)" if tobi_type == "under_zero" else ("飛びあり (0点以下)" if tobi_type == "zero_or_less" else "トビなし")
+
+    # 精算
+    seisan = [
+        f"{init_s:,}点持ち / {ret_s:,}点返し / {tobi_str}",
+        f"順位点 (ウマ)：[{uma_str}]",
+        f"端数処理：{basic.get('rounding_type', '五捨六入')}",
+    ]
+    rate = basic.get("rate_note", "")
+    if rate:
+        seisan.append(f"レート・換算メモ：{rate}")
+
+    # 基本・アリアリ
+    kuitan_str = "あり" if detail.get("kuitan", True) else "なし"
+    atozuke_str = "あり" if detail.get("atozuke", True) else "なし"
+    aka_str = detail.get("aka_dora", "3枚")
+    kuikae_str = "不可" if detail.get("kuikae", "forbidden") == "forbidden" else "可"
+    
+    kihon = [
+        f"喰いタン：{kuitan_str} / 後付け：{atozuke_str} / 赤牌：{aka_str}",
+        f"喰い替え：{kuikae_str} / 一発・カンドラ・裏ドラあり",
+        f"フリテンリーチ・見逃しツモ：{'あり' if detail.get('furiten_tsumo', True) else 'なし'}",
+        f"ツモ番なしリーチ：{'可能' if detail.get('tsumoban_none_riichi', False) else '不可'}",
+    ]
+
+    # 進行・流局
+    renchan_map = {"tenpai": "聴牌連荘", "agari": "和了連荘", "noten": "ノーテン連荘"}
+    renchan_str = renchan_map.get(detail.get("renchan_rule", "tenpai"), "聴牌連荘")
+
+    west_map = {
+        "under_30000": "トップ30,000点未満で西入 (サドンデス)",
+        "none": "なし (オーラスで必ず終了)",
+        "fixed_nan4": "南4局固定終了",
+    }
+    west_str = west_map.get(detail.get("west_extension", "under_30000"), "西入あり")
+
+    shinko = [
+        f"親連荘条件：{renchan_str}",
+        f"西入延長：{west_str}",
+        f"アガリ止め・テンパイ止め：{'あり' if detail.get('agari_yame', True) else 'なし'}",
+    ]
+
+    # 役満・特殊・チョンボ
+    dubron_map = {"atama_hane": "なし (頭ハネ/上家取り)", "atama_hane_kyotaku": "あり (供託は頭ハネ)", "split": "あり (全分配)"}
+    dubron_str = dubron_map.get(detail.get("dubron", "atama_hane"), "頭ハネ")
+
+    chombo_map = {"mangan_pay": "満貫払い", "pt_penalty": f"対局後 -{detail.get('chombo_pt', 20)}pt 直減算", "agari_hoki": "アガリ放棄のみ"}
+    chombo_str = chombo_map.get(detail.get("chombo_rule", "mangan_pay"), "満貫払い")
+
+    tokushu = [
+        f"ダブロン・トリロン：{dubron_str}",
+        f"パオ (責任払い)：{'あり (ツモ全額/ロン折半)' if detail.get('pao', True) else 'なし'}",
+        f"役満複合・数え役満：{'あり' if detail.get('yakuman_multiple', True) else 'なし'}",
+        f"国士無双暗カンアガリ：{'あり' if detail.get('kokushi_ankan_win', True) else 'なし'}",
+        f"チョンボ扱い：{chombo_str}",
+    ]
+
+    res = {
+        "精算": seisan,
+        "基本・アリアリルール": kihon,
+        "試合の進行": shinko,
+        "特殊ルール・チョンボ": tokushu,
+    }
+
+    house_notes = detail.get("house_notes", "")
+    if house_notes and house_notes.strip():
+        res["ハウスルールメモ"] = [line.strip() for line in house_notes.strip().split("\n") if line.strip()]
+
+    return res
+

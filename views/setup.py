@@ -3,13 +3,16 @@ from datetime import datetime
 import database2 as db
 import calc
 import game_logic
-from constants import MEMBERS, INIT_SCORE, HOUSE_RULES
+from constants import MEMBERS, INIT_SCORE, HOUSE_RULES, generate_rule_description
 
 
-def _show_rules_expander():
-    with st.expander("ルール確認"):
-        for category, rules in HOUSE_RULES.items():
+def _show_rules_expander(rule_config=None):
+    with st.expander("📖 適用中の詳細ルール確認"):
+        rule_desc = generate_rule_description(rule_config) if rule_config else HOUSE_RULES
+        for category, rules in rule_desc.items():
             st.markdown(f"**{category}**  \n" + "  \n".join(rules))
+            st.write("")
+
 
 
 def show_setup():
@@ -43,8 +46,11 @@ def show_setup():
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = db.get_groups()
-    rules = db.get_rules()
-    rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
+    custom_rules = db.get_rules()
+    official_rules = db.get_official_presets()
+    all_rules = custom_rules + official_rules
+    rule_map = {r["rule_id"]: f"[{r.get('display_id', 'R--')}] {r['rule_name']}" for r in all_rules}
+    rule_config_map = {r["rule_id"]: r.get("config", {}) for r in all_rules}
 
     formatted_groups = []
     for g in groups:
@@ -59,7 +65,7 @@ def show_setup():
     if "selected_group_id" not in st.session_state:
         st.session_state.selected_group_id = "all"
     if "active_rule_id" not in st.session_state:
-        st.session_state.active_rule_id = rules[0]["rule_id"] if rules else "m_league"
+        st.session_state.active_rule_id = all_rules[0]["rule_id"] if all_rules else "m_league"
 
     col_g, col_r = st.columns(2)
     with col_g:
@@ -70,18 +76,18 @@ def show_setup():
         chosen_group = next((g for g in group_options if g["group_name_disp"] == sel_g_name_disp), group_options[0])
         if chosen_group["group_id"] != st.session_state.selected_group_id:
             st.session_state.selected_group_id = chosen_group["group_id"]
-            # グループ変更時にデフォルトルールを自動適用
             if chosen_group.get("default_rule_id") and chosen_group["default_rule_id"] in rule_map:
                 st.session_state.active_rule_id = chosen_group["default_rule_id"]
             st.rerun()
 
     with col_r:
-        r_ids = [r["rule_id"] for r in rules]
+        r_ids = [r["rule_id"] for r in all_rules]
         cur_r_idx = r_ids.index(st.session_state.active_rule_id) if st.session_state.active_rule_id in r_ids else 0
         sel_r_id = st.selectbox("⚙️ 適用ルール", options=r_ids, index=cur_r_idx, format_func=lambda x: rule_map.get(x, x), key="setup_rule_select")
         if sel_r_id != st.session_state.active_rule_id:
             st.session_state.active_rule_id = sel_r_id
             st.rerun()
+
 
     st.divider()
 
@@ -152,8 +158,8 @@ def show_setup():
         if st.button("詳細モードで開始", type="primary",
                      disabled=not ready, use_container_width=True):
             # 選択中のルールの配給原点 (init_score) を使用し、セッションにルール設定を保存
-            active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
-            init_score_val = active_cfg.get("init_score", INIT_SCORE)
+            active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
+            init_score_val = active_cfg.get("basic", {}).get("init_score", active_cfg.get("init_score", INIT_SCORE))
             st.session_state.players = list(selected)
             st.session_state.scores = {p: init_score_val for p in selected}
             st.session_state.current_group_id = chosen_group["group_id"]
@@ -166,7 +172,7 @@ def show_setup():
             st.rerun()
     with c2:
         if st.button("結果のみ入力", disabled=not ready, use_container_width=True):
-            active_cfg = next((r["config"] for r in rules if r["rule_id"] == st.session_state.active_rule_id), {})
+            active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             st.session_state.players = list(selected)
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
@@ -178,7 +184,9 @@ def show_setup():
             game_logic.autosave_draft()
             st.rerun()
 
-    _show_rules_expander()
+    active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
+    _show_rules_expander(active_cfg)
+
 
 
 def show_simple_input():
