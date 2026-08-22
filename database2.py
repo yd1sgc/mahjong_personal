@@ -1,15 +1,155 @@
 import json
 import os
 import sqlite3
-import psycopg2
 import pandas as pd
 import streamlit as st
 from contextlib import contextmanager
 from datetime import datetime
 
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
 IS_LOCAL = st.secrets.get("local_mode", False)
 # テスト開発用データベース（本番mahjong_local.dbを100%保護するための分離ファイル）
 SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_test.db" if IS_LOCAL else None
+
+IDENTITY_SCHEMA_VERSION = 1
+
+
+def _table_exists(cursor, table_name):
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,)
+    )
+    return cursor.fetchone() is not None
+
+
+def _add_column_if_missing(cursor, table_name, column_name, column_type):
+    columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+    if column_name not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+
+
+def migrate_local_identity_schema(conn):
+    """ID中心のローカルスキーマへ移行する。
+
+    呼び出し元が渡したSQLite接続だけを変更する。アプリ起動時には実行しないため、
+    実在DBへの適用はバックアップ・確認後に明示的に行う。
+    """
+    c = conn.cursor()
+    c.execute("PRAGMA foreign_keys = OFF")
+
+    c.execute('''CREATE TABLE IF NOT EXISTS schema_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )''')
+
+    # 既存のgames列は保持し、対局時点の不変情報だけを追加する。
+    if _table_exists(c, "games"):
+        _add_column_if_missing(c, "games", "selected_group_id", "TEXT")
+        _add_column_if_missing(c, "games", "rule_name_snapshot", "TEXT")
+        _add_column_if_missing(c, "games", "rule_schema_version", "INTEGER")
+
+    # 旧membersは名前にUNIQUE制約があり、同名の別人を表現できない。
+    # 旧データを同じmember_idでコピーしてから、安全に制約を外す。
+    legacy_members = "members_legacy_identity_v1"
+    if _table_exists(c, "members"):
+        members_sql = c.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='members'"
+        ).fetchone()[0] or ""
+        if "UNIQUE" in members_sql.upper() and not _table_exists(c, legacy_members):
+            c.execute(f"ALTER TABLE members RENAME TO {legacy_members}")
+
+    c.execute('''CREATE TABLE IF NOT EXISTS members (
+        member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        member_name TEXT NOT NULL,
+        is_archived INTEGER NOT NULL DEFAULT 0
+    )''')
+
+    if _table_exists(c, legacy_members):
+        c.execute(f'''INSERT OR IGNORE INTO members (member_id, member_name, is_archived)
+            SELECT member_id, member_name, 0 FROM {legacy_members}''')
+        c.execute(f"DROP TABLE {legacy_members}")
+
+    if c.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
+        from constants import MEMBERS
+        c.executemany(
+            "INSERT INTO members (member_name) VALUES (?)",
+            [(name,) for name in MEMBERS]
+        )
+
+    c.execute('''CREATE TABLE IF NOT EXISTS groups (
+        group_id TEXT PRIMARY KEY,
+        group_name TEXT NOT NULL,
+        default_rule_id TEXT,
+        is_archived INTEGER NOT NULL DEFAULT 0
+    )''')
+    if _table_exists(c, "member_groups"):
+        c.execute('''INSERT OR IGNORE INTO groups
+            (group_id, group_name, default_rule_id, is_archived)
+            SELECT group_id, group_name, default_rule_id, 0 FROM member_groups''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS group_memberships (
+        group_id TEXT NOT NULL,
+        member_id INTEGER NOT NULL,
+        PRIMARY KEY (group_id, member_id),
+        FOREIGN KEY (group_id) REFERENCES groups(group_id),
+        FOREIGN KEY (member_id) REFERENCES members(member_id)
+    )''')
+    if _table_exists(c, "group_members"):
+        legacy_links = c.execute(
+            "SELECT group_id, member_name FROM group_members"
+        ).fetchall()
+        for group_id, member_name in legacy_links:
+            member = c.execute(
+                "SELECT member_id FROM members WHERE member_name=? ORDER BY member_id LIMIT 1",
+                (member_name,)
+            ).fetchone()
+            if member is None:
+                c.execute("INSERT INTO members (member_name) VALUES (?)", (member_name,))
+                member_id = c.lastrowid
+            else:
+                member_id = member[0]
+            c.execute(
+                "INSERT OR IGNORE INTO group_memberships (group_id, member_id) VALUES (?, ?)",
+                (group_id, member_id)
+            )
+
+    c.execute('''CREATE TABLE IF NOT EXISTS game_participants (
+        game_id INTEGER NOT NULL,
+        seat INTEGER NOT NULL CHECK (seat BETWEEN 1 AND 4),
+        member_id INTEGER,
+        display_name_snapshot TEXT NOT NULL,
+        score INTEGER,
+        rank INTEGER,
+        was_group_member INTEGER CHECK (was_group_member IN (0, 1) OR was_group_member IS NULL),
+        PRIMARY KEY (game_id, seat),
+        FOREIGN KEY (member_id) REFERENCES members(member_id)
+    )''')
+
+    if _table_exists(c, "games"):
+        for seat in range(1, 5):
+            rows = c.execute(
+                f"""SELECT game_id, p{seat}_name, p{seat}_score, p{seat}_rank
+                    FROM games WHERE p{seat}_name IS NOT NULL AND TRIM(p{seat}_name) != ''"""
+            ).fetchall()
+            for game_id, name, score, rank in rows:
+                member = c.execute(
+                    "SELECT member_id FROM members WHERE member_name=? ORDER BY member_id LIMIT 1",
+                    (name,)
+                ).fetchone()
+                c.execute('''INSERT OR IGNORE INTO game_participants
+                    (game_id, seat, member_id, display_name_snapshot, score, rank, was_group_member)
+                    VALUES (?, ?, ?, ?, ?, ?, NULL)''',
+                    (game_id, seat, member[0] if member else None, name, score, rank)
+                )
+
+    c.execute('''INSERT INTO schema_meta (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value''',
+        ("identity_schema_version", str(IDENTITY_SCHEMA_VERSION))
+    )
 
 
 def get_local_connection():
@@ -30,6 +170,8 @@ def _local_db():
 
 
 def get_connection():
+    if psycopg2 is None:
+        raise RuntimeError("オンラインDB接続には psycopg2-binary が必要です")
     try:
         db = st.secrets["database"]
     except KeyError:
