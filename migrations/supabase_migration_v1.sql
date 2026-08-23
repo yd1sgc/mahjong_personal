@@ -190,11 +190,22 @@ VALUES
     1,
     '{"basic": {"player_count": 4, "init_score": 30000, "return_score": 30000, "uma": [30, 10, -10, -30], "oka_type": "none", "rate_note": "オカなし", "rounding_type": "五捨六入"}, "detail": {"kuitan": true, "atozuke": true, "aka_dora": "なし", "dora_setting": "all", "kuikae": "forbidden", "tobi_end": "none", "west_extension": "none", "agari_yame": false, "renchan_rule": "tenpai", "dubron": "atama_hane", "pao": true, "chombo_rule": "mangan_pay", "house_notes": "最高位戦日本プロ麻雀協会公式ルール"}}'::jsonb,
     0
+),
+(
+    'rule_shinseki',
+    '親族麻雀ルール',
+    'custom',
+    1,
+    '{"basic": {"player_count": 4, "init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30], "oka_type": "top_takes_all", "rate_note": "1000点＝1.0pt", "rounding_type": "goshagokyu"}, "detail": {"kuitan": true, "atozuke": true, "aka_dora": "3枚", "dora_setting": "all", "kuikae": "forbidden", "kyushu": "renchan", "sufon": "none", "sujin_riichi": "none", "sukan": "allowed_single", "nagashi_mangan": "mangan_renchan", "dubron": "atama_hane", "furiten_tsumo": true, "tsumoban_none_riichi": false, "ippatsu": true, "renho": "none", "tobi_end": "under_zero", "tobi_penalty_pt": 0, "west_extension": "under_30000", "agari_yame": true, "tenpai_yame": true, "renchan_rule": "tenpai", "yakuman_multiple": true, "kokushi_ankan_win": true, "pao": true, "chombo_rule": "mangan_pay", "chombo_pt": 20, "house_notes": ""}}'::jsonb,
+    0
 )
 ON CONFLICT (rule_id) DO UPDATE SET
     name = EXCLUDED.name,
     config_json = EXCLUDED.config_json,
     is_archived = 0;
+
+-- 旧重複 m_league カスタムルールの削除
+DELETE FROM rule_templates WHERE rule_id = 'm_league' AND kind = 'custom';
 
 -- 9. スキーマバージョンの記録
 INSERT INTO schema_meta (key, value)

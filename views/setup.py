@@ -46,10 +46,13 @@ def show_setup():
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = db.get_groups()
-    custom_rules = db.get_rule_templates()
-    official_rules = []
-    all_rules = custom_rules + official_rules
-    rule_map = {r["rule_id"]: f"[{r.get('display_id', 'R--')}] {r['rule_name']}" for r in all_rules}
+    all_rules = db.get_rule_templates()
+    
+    def _rule_label(r):
+        tag = "公式" if r.get("kind") == "official" else "カスタム"
+        return f"【{tag}】{r['rule_name']}"
+
+    rule_map = {r["rule_id"]: _rule_label(r) for r in all_rules}
     rule_config_map = {r["rule_id"]: r.get("config", {}) for r in all_rules}
 
     formatted_groups = []
@@ -59,7 +62,7 @@ def show_setup():
         g_copy["group_name_disp"] = f"[{d_id}] {g['group_name']}"
         formatted_groups.append(g_copy)
 
-    group_options = [{"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "m_league"}] + formatted_groups
+    group_options = [{"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "rule_shinseki"}] + formatted_groups
 
     # セッション状態の初期化
     if "selected_group_id" not in st.session_state:

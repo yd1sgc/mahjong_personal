@@ -170,6 +170,22 @@ def migrate_local_identity_schema(conn):
             name=excluded.name, config_json=excluded.config_json, is_archived=0
         ''', (p["rule_id"], p["rule_name"], config_str))
 
+    # Seed default custom rule: 親族麻雀ルール
+    from constants import DEFAULT_RULE_CONFIG
+    shinseki_cfg_str = json.dumps(DEFAULT_RULE_CONFIG, ensure_ascii=False)
+    c.execute('''INSERT INTO rule_templates
+        (rule_id, name, kind, version, config_json, is_archived)
+        VALUES ('rule_shinseki', '親族麻雀ルール', 'custom', 1, ?, 0)
+        ON CONFLICT(rule_id) DO UPDATE SET
+        name=excluded.name, config_json=excluded.config_json, is_archived=0
+    ''', (shinseki_cfg_str,))
+
+    # Clean up duplicate legacy m_league custom rule (since official preset_m_league exists)
+    c.execute("DELETE FROM rule_templates WHERE rule_id='m_league' AND kind='custom'")
+
+    # Set default_rule_id for groups if using old m_league
+    c.execute("UPDATE groups SET default_rule_id='rule_shinseki' WHERE group_id='group_shinseki' OR default_rule_id='m_league'")
+
     c.execute('''INSERT INTO schema_meta (key, value) VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value''',
         ("identity_schema_version", str(IDENTITY_SCHEMA_VERSION))

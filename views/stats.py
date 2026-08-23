@@ -20,18 +20,26 @@ def show_stats():
     # ── フィルター選択エリア ─────────────────────────────────
     groups = db.get_groups()
     rules = db.get_rule_templates()
-    rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
+    
+    def _stats_rule_label(r):
+        if r.get("rule_id") == "all":
+            return r["rule_name"]
+        tag = "公式" if r.get("kind") == "official" else "カスタム"
+        return f"【{tag}】{r['rule_name']}"
+
+    rule_map = {r["rule_id"]: _stats_rule_label(r) for r in rules}
 
     grp_options = [{"group_id": "all", "group_name": "全グループ (全体)", "members": []}] + groups
-    rule_options = [{"rule_id": "all", "rule_name": "全ルール (全体)"}] + rules
+    rule_options = [{"rule_id": "all", "rule_name": "全ルール (全体)", "kind": "all"}] + rules
 
     col_f1, col_f2 = st.columns(2)
     with col_f1:
         sel_grp_name = st.selectbox("👥 グループ", [g["group_name"] for g in grp_options], key="stats_grp_sel")
         chosen_grp = next((g for g in grp_options if g["group_name"] == sel_grp_name), grp_options[0])
     with col_f2:
-        sel_rule_name = st.selectbox("⚙️ ルール", [r["rule_name"] for r in rule_options], key="stats_rule_sel")
-        chosen_rule = next((r for r in rule_options if r["rule_name"] == sel_rule_name), rule_options[0])
+        rule_disp_names = [_stats_rule_label(r) for r in rule_options]
+        sel_rule_disp = st.selectbox("⚙️ ルール", rule_disp_names, key="stats_rule_sel")
+        chosen_rule = next((r for r in rule_options if _stats_rule_label(r) == sel_rule_disp), rule_options[0])
 
     col_f3, col_f4 = st.columns(2)
     with col_f3:
