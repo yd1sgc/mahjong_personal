@@ -164,6 +164,8 @@ def show_setup():
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             init_score_val = active_cfg.get("basic", {}).get("init_score", active_cfg.get("init_score", INIT_SCORE))
             st.session_state.players = list(selected)
+            mem_name_to_id = {m["member_name"]: m["member_id"] for m in all_members}
+            st.session_state.player_member_ids = {m: mem_name_to_id.get(m) for m in selected}
             st.session_state.scores = {p: init_score_val for p in selected}
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
@@ -177,6 +179,8 @@ def show_setup():
         if st.button("結果のみ入力", disabled=not ready, use_container_width=True):
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             st.session_state.players = list(selected)
+            mem_name_to_id = {m["member_name"]: m["member_id"] for m in all_members}
+            st.session_state.player_member_ids = {m: mem_name_to_id.get(m) for m in selected}
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
             st.session_state.current_rule_config = active_cfg
@@ -222,7 +226,8 @@ def show_simple_input():
                 date_str, scores, players, local=db.IS_LOCAL,
                 rule_id=st.session_state.get("current_rule_id", "m_league"),
                 group_id=st.session_state.get("current_group_id", "all"),
-                rule_config=r_config
+                rule_config=r_config,
+                player_member_ids=st.session_state.get("player_member_ids")
             )
             db.get_games_data.clear()
             result_rows = [

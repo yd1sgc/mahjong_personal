@@ -517,7 +517,8 @@ def show_endgame():
                 date_str, scores, players, local=db.IS_LOCAL,
                 rule_id=st.session_state.get("current_rule_id", "m_league"),
                 group_id=st.session_state.get("current_group_id", "all"),
-                rule_config=r_config
+                rule_config=r_config,
+                player_member_ids=st.session_state.get("player_member_ids")
             )
             for r in st.session_state.round_history:
                 db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],

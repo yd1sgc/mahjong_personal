@@ -491,27 +491,42 @@ def clear_cache():
         pass
 
 
-def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None):
+def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None, player_member_ids=None):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     rule_json_str = json.dumps(rule_config, ensure_ascii=False) if rule_config else None
+    if player_member_ids is None:
+        player_member_ids = {}
+
     if local:
         with _local_db() as conn:
             c = conn.cursor()
+            
+            rule_name_snap = rule_config.get('rule_name', rule_id) if rule_config else rule_id
+
             c.execute('''INSERT INTO games (date,
                 p1_name, p1_score, p1_rank,
                 p2_name, p2_score, p2_rank,
                 p3_name, p3_score, p3_rank,
                 p4_name, p4_score, p4_rank,
-                is_synced, group_id, rule_id, applied_rule_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+                is_synced, group_id, rule_id, applied_rule_json, rule_name_snapshot, selected_group_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
                 date_str,
                 sorted_p[0][0], sorted_p[0][1], 1,
                 sorted_p[1][0], sorted_p[1][1], 2,
                 sorted_p[2][0], sorted_p[2][1], 3,
                 sorted_p[3][0], sorted_p[3][1], 4,
-                0, group_id, rule_id, rule_json_str
+                0, group_id, rule_id, rule_json_str, rule_name_snap, group_id
             ))
             next_id = c.lastrowid
+            
+            for rank, (name, score) in enumerate(sorted_p, start=1):
+                seat = players.index(name) + 1 if name in players else rank
+                m_id = player_member_ids.get(name)
+                c.execute('''INSERT INTO game_participants 
+                    (game_id, seat, member_id, display_name_snapshot, score, rank)
+                    VALUES (?, ?, ?, ?, ?, ?)''', 
+                    (next_id, seat, m_id, name, score, rank))
+
         clear_cache()
         return next_id
     with _remote_db() as conn:
