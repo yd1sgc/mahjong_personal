@@ -146,6 +146,31 @@ def migrate_local_identity_schema(conn):
                     (game_id, seat, member[0] if member else None, name, score, rank)
                 )
 
+    c.execute('''CREATE TABLE IF NOT EXISTS rule_templates (
+        rule_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        config_json TEXT NOT NULL,
+        is_archived INTEGER NOT NULL DEFAULT 0
+    )''')
+    
+    if _table_exists(c, "rules"):
+        c.execute('''INSERT OR IGNORE INTO rule_templates
+            (rule_id, name, kind, version, config_json, is_archived)
+            SELECT rule_id, rule_name, 'custom', 1, config_json, 0 FROM rules
+        ''')
+    
+    # Seed official templates
+    for p in OFFICIAL_PRESETS:
+        config_str = json.dumps(p["config"], ensure_ascii=False)
+        c.execute('''INSERT INTO rule_templates
+            (rule_id, name, kind, version, config_json, is_archived)
+            VALUES (?, ?, 'official', 1, ?, 0)
+            ON CONFLICT(rule_id) DO UPDATE SET
+            name=excluded.name, config_json=excluded.config_json, is_archived=0
+        ''', (p["rule_id"], p["rule_name"], config_str))
+
     c.execute('''INSERT INTO schema_meta (key, value) VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value''',
         ("identity_schema_version", str(IDENTITY_SCHEMA_VERSION))
@@ -825,82 +850,63 @@ OFFICIAL_PRESETS = [
 ]
 
 
-def get_official_presets():
-    return OFFICIAL_PRESETS
-
-
-def get_rules():
-    """登録済みルールの一覧をリストで取得（R01, R02... の display_id を付与）"""
-    default_fallback = [
-        {"rule_id": "m_league", "display_id": "R01", "rule_name": "マイ標準アリアリ", "is_default": 1, "is_official": False,
-         "config": {"basic": {"init_score": 25000, "return_score": 30000, "uma": [50, 10, -10, -30]}, "detail": {}}},
-    ]
+def get_rule_templates(include_archived=False):
+    """公式・カスタムのルールテンプレートを取得"""
     if not IS_LOCAL:
-        return default_fallback
-
+        return OFFICIAL_PRESETS
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT rule_id, rule_name, is_default, config_json FROM rules ORDER BY is_default DESC, rule_id")
+            query = "SELECT rule_id, name, kind, config_json, is_archived FROM rule_templates"
+            if not include_archived:
+                query += " WHERE is_archived = 0"
+            query += " ORDER BY kind DESC, rule_id ASC" # 'official' then 'custom'
+            c.execute(query)
             rows = c.fetchall()
-            if not rows:
-                return default_fallback
+            
             results = []
-            for idx, r in enumerate(rows):
+            for r in rows:
                 try:
                     cfg = json.loads(r[3])
                 except Exception:
                     cfg = {}
                 results.append({
                     "rule_id": r[0],
-                    "display_id": f"R{idx + 1:02d}",
                     "rule_name": r[1],
-                    "is_default": r[2],
-                    "is_official": False,
-                    "config": cfg
+                    "kind": r[2],
+                    "config": cfg,
+                    "is_archived": bool(r[4])
                 })
             return results
     except Exception:
-        return default_fallback
+        return OFFICIAL_PRESETS
 
 
-def save_rule(rule_id, rule_name, config_dict, is_default=False):
-    """ルールの作成・更新"""
+def save_custom_rule(rule_id, rule_name, config_dict):
+    """カスタムルールテンプレートを保存"""
     if not IS_LOCAL or rule_id.startswith("preset_"):
         return
     with _local_db() as conn:
         c = conn.cursor()
-        if is_default:
-            c.execute("UPDATE rules SET is_default = 0")
         config_str = json.dumps(config_dict, ensure_ascii=False)
         c.execute('''
-            INSERT INTO rules (rule_id, rule_name, is_default, config_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
+            VALUES (?, ?, 'custom', 1, ?, 0)
             ON CONFLICT(rule_id) DO UPDATE SET
-                rule_name=excluded.rule_name,
-                is_default=excluded.is_default,
-                config_json=excluded.config_json
-        ''', (rule_id, rule_name, 1 if is_default else 0, config_str))
+                name=excluded.name,
+                config_json=excluded.config_json,
+                is_archived=0,
+                version=version+1
+        ''', (rule_id, rule_name, config_str))
 
 
-def delete_rule(rule_id):
-    """ルールの削除"""
+def archive_rule(rule_id):
+    """カスタムルールをアーカイブ"""
     if not IS_LOCAL or rule_id.startswith("preset_"):
         return
     with _local_db() as conn:
         c = conn.cursor()
-        c.execute("DELETE FROM rules WHERE rule_id = ?", (rule_id,))
-
-
-def set_default_rule(rule_id):
-    """デフォルトルールの変更"""
-    if not IS_LOCAL or rule_id.startswith("preset_"):
-        return
-    with _local_db() as conn:
-        c = conn.cursor()
-        c.execute("UPDATE rules SET is_default = 0")
-        c.execute("UPDATE rules SET is_default = 1 WHERE rule_id = ?", (rule_id,))
-
+        c.execute("UPDATE rule_templates SET is_archived = 1 WHERE rule_id = ?", (rule_id,))
 
 
 # ── グループ管理関数 ────────────────────────────────────────

@@ -38,8 +38,9 @@ def show_rule_manage():
     st.caption("対局で適用するルール（持ち点・ウマ・アリアリルール・特殊ペナルティ等）を細かくカスタマイズ・管理できます。")
     st.divider()
 
-    official_presets = db.get_official_presets()
-    custom_rules = db.get_rules()
+    all_rules = db.get_rule_templates(include_archived=False)
+    official_presets = [r for r in all_rules if r["kind"] == "official"]
+    custom_rules = [r for r in all_rules if r["kind"] == "custom"]
 
     if "editing_rule_id" not in st.session_state:
         st.session_state.editing_rule_id = None
@@ -83,7 +84,6 @@ def show_rule_manage():
             r_id = r["rule_id"]
             disp_id = r.get("display_id", "R--")
             r_name = r["rule_name"]
-            is_def = r.get("is_default", 0)
             norm_cfg = _normalize_config(r.get("config", {}))
             b_cfg = norm_cfg["basic"]
             d_cfg = norm_cfg["detail"]
@@ -97,15 +97,10 @@ def show_rule_manage():
             with st.container():
                 c1, c2, c3 = st.columns([3, 1, 1])
                 with c1:
-                    badge = " 🏆 【標準ルール】" if is_def else ""
-                    st.markdown(f"**[{disp_id}] {r_name}**{badge}")
+                    st.markdown(f"**[{disp_id}] {r_name}**")
                     st.caption(f"{init_s:,}点持ち / {ret_s:,}点返し | ウマ: [{uma_str}] | {tobi_str}")
                 with c2:
-                    if not is_def:
-                        if st.button("標準に設定", key=f"set_def_{r_id}", use_container_width=True):
-                            db.set_default_rule(r_id)
-                            st.success(f"「[{disp_id}] {r_name}」を標準ルールに設定しました")
-                            st.rerun()
+                    st.empty() # Placeholder for alignment
                 with c3:
                     cb1, cb2 = st.columns(2)
                     with cb1:
@@ -113,12 +108,11 @@ def show_rule_manage():
                             st.session_state.editing_rule_id = r_id
                             st.rerun()
                     with cb2:
-                        if not is_def and len(custom_rules) > 1:
-                            if st.button("削除", key=f"del_{r_id}", use_container_width=True):
-                                db.delete_rule(r_id)
-                                if st.session_state.editing_rule_id == r_id:
-                                    st.session_state.editing_rule_id = None
-                                st.rerun()
+                        if st.button("削除", key=f"del_{r_id}", use_container_width=True):
+                            db.archive_rule(r_id)
+                            if st.session_state.editing_rule_id == r_id:
+                                st.session_state.editing_rule_id = None
+                            st.rerun()
 
             st.divider()
 
@@ -270,9 +264,7 @@ def show_rule_manage():
                 st.error("ルール名を入力してください")
             else:
                 r_id = target_rule["rule_id"] if is_edit else f"rule_{uuid.uuid4().hex[:8]}"
-                is_def = target_rule.get("is_default", 0) if is_edit else (1 if len(custom_rules) == 0 else 0)
-                
-                db.save_rule(r_id, rule_name_in.strip(), preview_config, is_default=bool(is_def))
+                db.save_custom_rule(r_id, rule_name_in.strip(), preview_config)
                 st.session_state.editing_rule_id = None
                 st.success(f"ルール「[{next_rid_str}] {rule_name_in.strip()}」を保存しました")
                 st.rerun()

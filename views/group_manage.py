@@ -16,7 +16,7 @@ def show_group_manage():
     st.divider()
 
     groups = db.get_groups()
-    rules = db.get_rules()
+    rules = db.get_rule_templates()
     rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
     all_members = db.get_all_members()
 

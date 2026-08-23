@@ -29,7 +29,15 @@ def _create_legacy_db():
             member_name TEXT NOT NULL,
             PRIMARY KEY (group_id, member_name)
         );
+        CREATE TABLE rules (
+            rule_id TEXT PRIMARY KEY,
+            rule_name TEXT NOT NULL,
+            is_default INTEGER DEFAULT 0,
+            config_json TEXT NOT NULL
+        );
     ''')
+    conn.execute("INSERT INTO rules VALUES ('rule_old1', 'Old Custom', 1, '{}')")
+
     conn.execute("INSERT INTO members (member_name) VALUES ('Alice')")
     conn.execute("INSERT INTO members (member_name) VALUES ('Bob')")
     conn.execute(
@@ -87,3 +95,16 @@ def test_identity_migration_links_groups_by_member_id_and_allows_duplicate_names
         "SELECT value FROM schema_meta WHERE key='identity_schema_version'"
     ).fetchone()[0]
     assert version == '1'
+
+def test_identity_migration_creates_rule_templates():
+    conn = _create_legacy_db()
+
+    migrate_local_identity_schema(conn)
+
+    # 1. Official presets should be seeded
+    official = conn.execute("SELECT rule_id FROM rule_templates WHERE kind='official' AND rule_id='preset_m_league'").fetchone()
+    assert official is not None, "m_league preset should be seeded as official"
+
+    # 2. Legacy rules should be migrated as 'custom'
+    legacy = conn.execute("SELECT rule_id, name, kind, is_archived FROM rule_templates WHERE rule_id='rule_old1'").fetchone()
+    assert legacy == ('rule_old1', 'Old Custom', 'custom', 0)

@@ -46,8 +46,8 @@ def show_setup():
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = db.get_groups()
-    custom_rules = db.get_rules()
-    official_rules = db.get_official_presets()
+    custom_rules = db.get_rule_templates()
+    official_rules = []
     all_rules = custom_rules + official_rules
     rule_map = {r["rule_id"]: f"[{r.get('display_id', 'R--')}] {r['rule_name']}" for r in all_rules}
     rule_config_map = {r["rule_id"]: r.get("config", {}) for r in all_rules}
