@@ -1,8 +1,9 @@
-# Python キャッシュ
+# Python キャッシュ・仮想環境
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
 
 # 個人データ（記録しない）
 *.db
