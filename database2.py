@@ -12,8 +12,7 @@ except ImportError:
     psycopg2 = None
 
 IS_LOCAL = st.secrets.get("local_mode", False)
-# テスト開発用データベース（本番mahjong_local.dbを100%保護するための分離ファイル）
-SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_test.db" if IS_LOCAL else None
+SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if IS_LOCAL else None
 
 IDENTITY_SCHEMA_VERSION = 1
 
