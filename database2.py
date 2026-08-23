@@ -336,6 +336,7 @@ def init_local_db():
             member_name TEXT NOT NULL,
             PRIMARY KEY (group_id, member_name)
         )''')
+        migrate_local_identity_schema(conn)
         c.execute('''CREATE TABLE IF NOT EXISTS members (
             member_id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_name TEXT NOT NULL UNIQUE
@@ -585,7 +586,30 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
 def get_games_data(year_filter=None):
     if IS_LOCAL:
         with _local_db() as conn:
-            df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
+            query = '''
+            SELECT 
+                g.game_id, g.date, g.group_id, 
+                COALESCE(g.rule_name_snapshot, g.rule_id) AS rule_id, 
+                g.applied_rule_json, g.is_synced,
+                MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+                MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p2_name,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.score END) AS p2_score,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+                MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p3_name,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.score END) AS p3_score,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+                MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p4_name,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.score END) AS p4_score,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank
+            FROM games g
+            LEFT JOIN game_participants gp ON g.game_id = gp.game_id
+            LEFT JOIN members m ON gp.member_id = m.member_id
+            GROUP BY g.game_id
+            ORDER BY g.game_id DESC
+            '''
+            df = _fetch_df(conn, query)
     else:
         with _remote_db() as conn:
             df = _fetch_df(conn, "SELECT * FROM games ORDER BY game_id DESC")
@@ -614,7 +638,29 @@ def get_rounds_data():
 def load_all_games():
     if IS_LOCAL:
         with _local_db() as conn:
-            return _fetch_df(conn, "SELECT * FROM games")
+            query = '''
+            SELECT 
+                g.game_id, g.date, g.group_id, 
+                COALESCE(g.rule_name_snapshot, g.rule_id) AS rule_id, 
+                g.applied_rule_json, g.is_synced,
+                MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+                MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p2_name,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.score END) AS p2_score,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+                MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p3_name,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.score END) AS p3_score,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+                MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p4_name,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.score END) AS p4_score,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank
+            FROM games g
+            LEFT JOIN game_participants gp ON g.game_id = gp.game_id
+            LEFT JOIN members m ON gp.member_id = m.member_id
+            GROUP BY g.game_id
+            '''
+            return _fetch_df(conn, query)
     with _remote_db() as conn:
         return _fetch_df(conn, "SELECT * FROM games")
 
@@ -670,7 +716,17 @@ def update_game_scores(game_id, scores_dict):
     if IS_LOCAL:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT p1_name, p2_name, p3_name, p4_name FROM games WHERE game_id=?", (game_id,))
+            query = '''
+            SELECT 
+                MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END),
+                MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END),
+                MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END),
+                MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END)
+            FROM game_participants gp
+            LEFT JOIN members m ON gp.member_id = m.member_id
+            WHERE gp.game_id = ?
+            '''
+            c.execute(query, (game_id,))
             row = c.fetchone()
             if row:
                 for slot in range(1, 5):
@@ -679,6 +735,10 @@ def update_game_scores(game_id, scores_dict):
                         c.execute(
                             f"UPDATE games SET p{slot}_score=?, p{slot}_rank=? WHERE game_id=?",
                             (scores_dict[name], name_to_rank[name], game_id)
+                        )
+                        c.execute(
+                            "UPDATE game_participants SET score=?, rank=? WHERE game_id=? AND seat=?",
+                            (scores_dict[name], name_to_rank[name], game_id, slot)
                         )
         return
     with _remote_db() as conn:
@@ -701,6 +761,7 @@ def delete_game(game_id):
             c = conn.cursor()
             c.execute("DELETE FROM games WHERE game_id=?", (game_id,))
             c.execute("DELETE FROM rounds WHERE game_id=?", (game_id,))
+            c.execute("DELETE FROM game_participants WHERE game_id=?", (game_id,))
         return
     with _remote_db() as conn:
         c = conn.cursor()
