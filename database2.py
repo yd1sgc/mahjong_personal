@@ -912,11 +912,11 @@ def get_groups():
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT group_id, group_name, default_rule_id FROM member_groups ORDER BY rowid ASC, group_name ASC")
+            c.execute("SELECT group_id, group_name, default_rule_id FROM groups WHERE is_archived = 0 ORDER BY rowid ASC, group_name ASC")
             group_rows = c.fetchall()
             groups = []
             for idx, (g_id, g_name, r_id) in enumerate(group_rows):
-                c.execute("SELECT member_name FROM group_members WHERE group_id = ? ORDER BY member_name", (g_id,))
+                c.execute("SELECT member_id FROM group_memberships WHERE group_id = ?", (g_id,))
                 members = [m[0] for m in c.fetchall()]
                 groups.append({
                     "display_id": f"G{idx + 1:02d}",
@@ -937,18 +937,19 @@ def save_group(group_id, group_name, default_rule_id, member_list):
     with _local_db() as conn:
         c = conn.cursor()
         c.execute('''
-            INSERT INTO member_groups (group_id, group_name, default_rule_id)
-            VALUES (?, ?, ?)
+            INSERT INTO groups (group_id, group_name, default_rule_id, is_archived)
+            VALUES (?, ?, ?, 0)
             ON CONFLICT(group_id) DO UPDATE SET
                 group_name=excluded.group_name,
-                default_rule_id=excluded.default_rule_id
+                default_rule_id=excluded.default_rule_id,
+                is_archived=0
         ''', (group_id, group_name, default_rule_id))
         
-        c.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        c.execute("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
         for m in member_list:
-            if m and str(m).strip():
-                c.execute("INSERT INTO group_members (group_id, member_name) VALUES (?, ?)",
-                          (group_id, str(m).strip()))
+            if m is not None:
+                c.execute("INSERT INTO group_memberships (group_id, member_id) VALUES (?, ?)",
+                          (group_id, m))
 
 
 def delete_group(group_id):
@@ -957,8 +958,7 @@ def delete_group(group_id):
         return
     with _local_db() as conn:
         c = conn.cursor()
-        c.execute("DELETE FROM member_groups WHERE group_id = ?", (group_id,))
-        c.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        c.execute("UPDATE groups SET is_archived = 1 WHERE group_id = ?", (group_id,))
 
 
 # ── メンバーマスター管理関数 ──────────────────────────────
@@ -971,13 +971,13 @@ def get_all_members():
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT member_id, member_name FROM members ORDER BY member_id ASC")
+            c.execute("SELECT member_id, member_name FROM members WHERE is_archived = 0 ORDER BY member_id ASC")
             rows = c.fetchall()
             if not rows:
                 from constants import MEMBERS
                 for m in MEMBERS:
-                    c.execute("INSERT OR IGNORE INTO members (member_name) VALUES (?)", (m,))
-                c.execute("SELECT member_id, member_name FROM members ORDER BY member_id ASC")
+                    c.execute("INSERT OR IGNORE INTO members (member_name, is_archived) VALUES (?, 0)", (m,))
+                c.execute("SELECT member_id, member_name FROM members WHERE is_archived = 0 ORDER BY member_id ASC")
                 rows = c.fetchall()
             return [{"member_id": r[0], "member_name": r[1]} for r in rows]
     except Exception:
@@ -986,28 +986,26 @@ def get_all_members():
 
 
 def add_member(member_name):
-    """新規メンバーを追加"""
+    """新規メンバーを追加し、生成されたmember_idを返す"""
     if not IS_LOCAL or not member_name or not str(member_name).strip():
-        return False
+        return None
     name = str(member_name).strip()
     try:
         with _local_db() as conn:
             c = conn.cursor()
-            c.execute("INSERT INTO members (member_name) VALUES (?)", (name,))
-            return True
-    except sqlite3.IntegrityError:
-        return False
+            c.execute("INSERT INTO members (member_name, is_archived) VALUES (?, 0)", (name,))
+            return c.lastrowid
     except Exception:
-        return False
+        return None
 
 
 def delete_member(member_id):
-    """メンバーの削除"""
+    """メンバーの削除 (アーカイブ化)"""
     if not IS_LOCAL:
         return
     with _local_db() as conn:
         c = conn.cursor()
-        c.execute("DELETE FROM members WHERE member_id = ?", (member_id,))
+        c.execute("UPDATE members SET is_archived = 1 WHERE member_id = ?", (member_id,))
 
 
 

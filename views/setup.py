@@ -114,12 +114,15 @@ def show_setup():
 
     # ── メンバーボタン一覧 ───────────────────────────────────
     all_members = db.get_all_members()
-    target_members = chosen_group.get("members", [])
-    if chosen_group["group_id"] == "all" or not target_members:
+    target_members_ids = chosen_group.get("members", [])
+    mem_name_map = {m["member_id"]: m["member_name"] for m in all_members}
+    target_members_names = [mem_name_map[mid] for mid in target_members_ids if mid in mem_name_map]
+
+    if chosen_group["group_id"] == "all" or not target_members_names:
         display_members = [m["member_name"] for m in all_members]
     else:
         show_all = st.checkbox("全登録メンバーを表示する", value=False, key="setup_show_all_mems")
-        display_members = [m["member_name"] for m in all_members] if show_all else target_members
+        display_members = [m["member_name"] for m in all_members] if show_all else target_members_names
 
     # ID表記付きマップ
     mem_id_map = {m["member_name"]: f"#{m['member_id']:02d}" for m in all_members}

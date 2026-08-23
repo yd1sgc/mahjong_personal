@@ -49,11 +49,12 @@ def show_group_manage():
         with c_m2:
             if st.button("＋ メンバー追加", type="primary", use_container_width=True, key="tab1_add_mbtn"):
                 if new_mname and new_mname.strip():
-                    if db.add_member(new_mname.strip()):
+                    new_id = db.add_member(new_mname.strip())
+                    if new_id is not None:
                         st.success(f"メンバー「{new_mname.strip()}」をID登録しました")
                         st.rerun()
                     else:
-                        st.error("同名のメンバーが既に登録されています")
+                        st.error("メンバーの登録に失敗しました")
                 else:
                     st.warning("名前を入力してください")
 
@@ -64,7 +65,7 @@ def show_group_manage():
             m_label = f"#{m['member_id']:02d} {m['member_name']}"
             with m_cols1[i % 2]:
                 if st.checkbox(m_label, key=f"t1_mem_{m['member_id']}"):
-                    selected_members_new.append(m["member_name"])
+                    selected_members_new.append(m["member_id"])
 
         st.divider()
 
@@ -129,7 +130,9 @@ def show_group_manage():
                 r_id = g.get("default_rule_id", "m_league")
                 r_name = rule_map.get(r_id, "標準ルール")
                 members = g.get("members", [])
-                mem_str = "、".join(members) if members else "メンバー未登録"
+                mem_name_map = {m["member_id"]: m["member_name"] for m in all_members}
+                mem_names = [mem_name_map[mid] for mid in members if mid in mem_name_map]
+                mem_str = "、".join(mem_names) if mem_names else "メンバー未登録"
 
                 with st.container():
                     c1, c2 = st.columns([3, 2])
@@ -167,8 +170,9 @@ def show_group_manage():
                 with c_em2:
                     if st.button("＋ メンバー追加", type="primary", use_container_width=True, key="t2_edit_add_mbtn"):
                         if edit_new_mname and edit_new_mname.strip():
-                            if db.add_member(edit_new_mname.strip()):
-                                cur_mems.add(edit_new_mname.strip())
+                            new_id = db.add_member(edit_new_mname.strip())
+                            if new_id is not None:
+                                cur_mems.add(new_id)
                                 db.save_group(target_g["group_id"], target_g["group_name"], target_g.get("default_rule_id", "m_league"), list(cur_mems))
                                 st.rerun()
 
@@ -177,8 +181,8 @@ def show_group_manage():
                 for i, m in enumerate(all_members):
                     m_label = f"#{m['member_id']:02d} {m['member_name']}"
                     with m_cols2[i % 2]:
-                        if st.checkbox(m_label, value=(m["member_name"] in cur_mems), key=f"t2_emem_{m['member_id']}"):
-                            selected_mems_edit.append(m["member_name"])
+                        if st.checkbox(m_label, value=(m["member_id"] in cur_mems), key=f"t2_emem_{m['member_id']}"):
+                            selected_mems_edit.append(m["member_id"])
 
                 st.divider()
 
