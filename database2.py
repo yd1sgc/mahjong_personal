@@ -1133,6 +1133,9 @@ def get_rule_templates(include_archived=False):
         return OFFICIAL_PRESETS
 
 
+get_rules = get_rule_templates
+
+
 def save_custom_rule(rule_id, rule_name, config_dict):
     """カスタムルールテンプレートを保存"""
     if rule_id.startswith("preset_"):

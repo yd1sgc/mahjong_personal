@@ -19,7 +19,7 @@ def show_stats():
 
     # ── フィルター選択エリア ─────────────────────────────────
     groups = db.get_groups()
-    rules = db.get_rules()
+    rules = db.get_rule_templates()
     rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
 
     grp_options = [{"group_id": "all", "group_name": "全グループ (全体)", "members": []}] + groups
