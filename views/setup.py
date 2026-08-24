@@ -36,13 +36,13 @@ def show_setup():
                 st.rerun()
         st.divider()
 
-    ch1, ch2 = st.columns([1, 3])
-    with ch1:
+    st.write("")
+    st.write("")
+    _, c_center, _ = st.columns([1, 2, 1])
+    with c_center:
         if st.button(" ホーム", use_container_width=True, key="setup_back_home"):
             st.session_state.view = "home"
             st.rerun()
-    with ch2:
-        st.markdown("### 対局メンバー・ルール選択")
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = db.get_groups()
