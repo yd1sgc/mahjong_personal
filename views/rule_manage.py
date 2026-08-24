@@ -38,13 +38,26 @@ def show_rule_manage():
     st.caption("対局で適用するルール（持ち点・ウマ・アリアリルール・特殊ペナルティ等）を細かくカスタマイズ・管理できます。")
     st.divider()
 
+    if "editing_rule_id" not in st.session_state:
+        st.session_state.editing_rule_id = None
+    if "rule_page_mode" not in st.session_state:
+        st.session_state.rule_page_mode = "list"
+
+    if "rule_flash_message" in st.session_state:
+        st.success(st.session_state.rule_flash_message)
+        del st.session_state.rule_flash_message
+
     all_rules = db.get_rule_templates(include_archived=False)
     official_presets = [r for r in all_rules if r["kind"] == "official"]
     custom_rules = [r for r in all_rules if r["kind"] == "custom"]
 
-    if "editing_rule_id" not in st.session_state:
-        st.session_state.editing_rule_id = None
+    if st.session_state.rule_page_mode == "list":
+        show_rule_list(official_presets, custom_rules)
+    elif st.session_state.rule_page_mode == "edit":
+        show_rule_edit(custom_rules)
 
+
+def show_rule_list(official_presets, custom_rules):
     # ── 1. 公式システムテンプレート (編集不可 / 複製可) ───────
     st.subheader("🏆 公式システムテンプレート (編集不可・複製作成のみ可)")
     st.caption("有名団体や標準ルールの固定定義です。「複製作成」ボタンを押すと下のフォームに内容が読み込まれます。")
@@ -71,14 +84,22 @@ def show_rule_manage():
                         "config": norm_cfg
                     }
                     st.session_state.editing_rule_id = None
+                    st.session_state.rule_page_mode = "edit"
                     st.rerun()
         st.divider()
 
     # ── 2. カスタムルール一覧 (R01, R02... 編集可) ─────────────
     st.subheader("📋 マイカスタムルール一覧")
 
+    if st.button("➕ 新規カスタムルールを作成", use_container_width=True, type="primary"):
+        st.session_state.rule_page_mode = "edit"
+        st.session_state.editing_rule_id = None
+        st.session_state.pop("form_preset_data", None)
+        st.rerun()
+    st.write("")
+
     if not custom_rules:
-        st.info("カスタムルールは登録されていません。下のフォームから新規作成してください。")
+        st.info("カスタムルールは登録されていません。上のボタンから新規作成してください。")
     else:
         for r in custom_rules:
             r_id = r["rule_id"]
@@ -102,19 +123,20 @@ def show_rule_manage():
                 with c2:
                     st.empty() # Placeholder for alignment
                 with c3:
-                    cb1, cb2 = st.columns(2)
-                    with cb1:
-                        if st.button("編集", key=f"edit_{r_id}", use_container_width=True):
-                            st.session_state.editing_rule_id = r_id
-                            st.rerun()
-                    with cb2:
-                        if st.button("削除", key=f"del_{r_id}", use_container_width=True):
-                            db.archive_rule(r_id)
-                            if st.session_state.editing_rule_id == r_id:
-                                st.session_state.editing_rule_id = None
-                            st.rerun()
+                    if st.button("編集", key=f"edit_{r_id}", use_container_width=True):
+                        st.session_state.editing_rule_id = r_id
+                        st.session_state.rule_page_mode = "edit"
+                        st.rerun()
 
             st.divider()
+
+
+def show_rule_edit(custom_rules):
+    if st.button("⬅️ 一覧へ戻る", key="rule_back_list"):
+        st.session_state.rule_page_mode = "list"
+        st.session_state.editing_rule_id = None
+        st.rerun()
+    st.divider()
 
     # ── 3. ルール作成 / 編集フォーム (案A: 縦並びアコーディオン) ──
     target_rule = None
@@ -264,8 +286,12 @@ def show_rule_manage():
     st.write("")
     st.divider()
 
-    # 保存 / キャンセルボタン
-    cs1, cs2 = st.columns(2)
+    # 保存 / キャンセル / 削除ボタン
+    if is_edit:
+        cs1, cs2, cs3 = st.columns(3)
+    else:
+        cs1, cs2 = st.columns(2)
+
     with cs1:
         if st.button("💾 このルールを保存する", type="primary", use_container_width=True, key="rf_save_all"):
             if not rule_name_in.strip():
@@ -273,13 +299,41 @@ def show_rule_manage():
             else:
                 r_id = target_rule["rule_id"] if is_edit else f"rule_{uuid.uuid4().hex[:8]}"
                 db.save_custom_rule(r_id, rule_name_in.strip(), preview_config)
+                st.session_state.rule_flash_message = f"ルール「[{next_rid_str}] {rule_name_in.strip()}」を保存しました"
                 st.session_state.editing_rule_id = None
-                st.success(f"ルール「[{next_rid_str}] {rule_name_in.strip()}」を保存しました")
+                st.session_state.rule_page_mode = "list"
                 st.rerun()
-    with cs2:
-        if is_edit:
+
+    if is_edit:
+        with cs2:
+            del_key = f"confirm_del_{target_rule['rule_id']}"
+            if st.session_state.get(del_key, False):
+                st.error("本当に削除しますか？")
+                cd1, cd2 = st.columns(2)
+                with cd1:
+                    if st.button("はい", type="primary", use_container_width=True, key="rf_del_yes"):
+                        db.archive_rule(target_rule["rule_id"])
+                        st.session_state.rule_flash_message = f"ルール「{target_rule['rule_name']}」を削除しました"
+                        st.session_state.editing_rule_id = None
+                        st.session_state.rule_page_mode = "list"
+                        st.session_state[del_key] = False
+                        st.rerun()
+                with cd2:
+                    if st.button("いいえ", use_container_width=True, key="rf_del_no"):
+                        st.session_state[del_key] = False
+                        st.rerun()
+            else:
+                if st.button("🗑️ 削除", type="secondary", use_container_width=True, key="rf_del_rule"):
+                    st.session_state[del_key] = True
+                    st.rerun()
+        with cs3:
             if st.button("キャンセル", use_container_width=True, key="rf_cancel_all"):
                 st.session_state.editing_rule_id = None
+                st.session_state.rule_page_mode = "list"
                 st.rerun()
-
-
+    else:
+        with cs2:
+            if st.button("キャンセル", use_container_width=True, key="rf_cancel_all"):
+                st.session_state.editing_rule_id = None
+                st.session_state.rule_page_mode = "list"
+                st.rerun()
