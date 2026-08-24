@@ -59,7 +59,10 @@ def recalculate_from_history():
     players = st.session_state.players
     if not players:
         return
-    scores = {p: 25000 for p in players}
+    active_cfg = st.session_state.get("current_rule_config", {})
+    b_cfg = active_cfg.get("basic", active_cfg)
+    init_score_val = b_cfg.get("init_score", 25000)
+    scores = {p: init_score_val for p in players}
     riichi_stick = 0
     honba = 0
 

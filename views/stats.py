@@ -81,10 +81,17 @@ def show_stats():
     # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
     if chosen_grp["group_id"] != "all" and not include_guests and chosen_grp.get("members"):
         grp_mems = set(chosen_grp["members"])
-        if not game_stats.empty and "名前" in game_stats.columns:
-            game_stats = game_stats[game_stats["名前"].isin(grp_mems)]
-        if not round_stats.empty and "名前" in round_stats.columns:
-            round_stats = round_stats[round_stats["名前"].isin(grp_mems)]
+        
+        valid_games = []
+        for _, row in df_games.iterrows():
+            players_in_game = [row.get(f"p{i}_name") for i in range(1, 5)]
+            if all((p in grp_mems) for p in players_in_game if pd.notna(p) and str(p).strip()):
+                valid_games.append(row["game_id"])
+        
+        df_games = df_games[df_games["game_id"].isin(valid_games)]
+        
+        # 再計算
+        game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
     df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
     rows = []

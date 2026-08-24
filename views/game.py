@@ -29,9 +29,10 @@ def show_game():
     if r_obj:
         rule_name = r_obj["rule_name"]
 
-    init_s = r_cfg.get("init_score", 25000)
-    ret_s = r_cfg.get("return_score", 30000)
-    uma = r_cfg.get("uma", [50, 10, -10, -30])
+    b_cfg = r_cfg.get("basic", r_cfg)
+    init_s = b_cfg.get("init_score", 25000)
+    ret_s = b_cfg.get("return_score", 30000)
+    uma = b_cfg.get("uma", [50, 10, -10, -30])
     uma_str = f"{uma[0]:+}, {uma[1]:+}, {uma[2]:+}, {uma[3]:+}"
 
     st.caption(f"👥 卓: **{grp_name}** | ⚙️ ルール: **{rule_name}** ({init_s:,}点持/{ret_s:,}点返 | ウマ:[{uma_str}])")
