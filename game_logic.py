@@ -65,10 +65,12 @@ def recalculate_from_history():
     scores = {p: init_score_val for p in players}
     riichi_stick = 0
     honba = 0
+    current_round_idx = 0
 
-    for r in st.session_state.round_history:
-        k_idx = _parse_kyoku_idx(r.get("kyoku_name", ""))
-        dealer = players[k_idx % 4]
+    for i, r in enumerate(st.session_state.round_history):
+        dealer = players[current_round_idx % 4]
+        wind = ["東", "南", "西"][min(current_round_idx // 4, 2)]
+        r["kyoku_name"] = f"{wind}{(current_round_idx % 4) + 1}局"
 
         # リーチ処理
         riichi_list = r.get("riichi", [])
@@ -81,6 +83,8 @@ def recalculate_from_history():
         winner = r.get("winner", "")
         loser = r.get("loser", "")
         score = r.get("score", 0)
+        
+        dealer_continues = False
 
         if win_type == "ron":
             total = score + honba * 300
@@ -90,9 +94,7 @@ def recalculate_from_history():
                 scores[winner] += total + riichi_stick * 1000
             riichi_stick = 0
             if winner == dealer:
-                honba += 1
-            else:
-                honba = 0
+                dealer_continues = True
 
         elif win_type == "tsumo":
             if winner == dealer:
@@ -102,7 +104,7 @@ def recalculate_from_history():
                         scores[p] -= each
                         scores[winner] += each
                 scores[winner] += riichi_stick * 1000
-                honba += 1
+                dealer_continues = True
             else:
                 oya_pay = int(((score / 2) + 99) // 100 * 100) + honba * 100
                 ko_pay = int(((score / 4) + 99) // 100 * 100) + honba * 100
@@ -113,7 +115,6 @@ def recalculate_from_history():
                     scores[p] -= pay
                     scores[winner] += pay
                 scores[winner] += riichi_stick * 1000
-                honba = 0
             riichi_stick = 0
 
         elif win_type == "ryukyoku":
@@ -127,26 +128,37 @@ def recalculate_from_history():
                     scores[p] -= each_noten
                 for p in tenpai:
                     scores[p] += each_tenpai
-            honba += 1
+            
+            renchan_rule = active_cfg.get("detail", {}).get("renchan_rule", "tenpai")
+            if renchan_rule == "tenpai":
+                dealer_continues = (dealer in tenpai)
+            elif renchan_rule == "agari":
+                dealer_continues = False
+            elif renchan_rule == "noten":
+                dealer_continues = True
 
         elif win_type == "chombo":
             chombo_p = winner
-            if chombo_p == dealer:
-                for p in players:
-                    if p != chombo_p:
-                        scores[chombo_p] -= 4000
-                        scores[p] += 4000
-            else:
-                for p in players:
-                    if p == chombo_p:
-                        continue
-                    elif p == dealer:
-                        scores[chombo_p] -= 4000
-                        scores[p] += 4000
-                    else:
-                        scores[chombo_p] -= 2000
-                        scores[p] += 2000
-                        
+            detail_cfg = active_cfg.get("detail", {})
+            chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
+            if chombo_rule == "mangan_pay":
+                if chombo_p == dealer:
+                    for p in players:
+                        if p != chombo_p:
+                            scores[chombo_p] -= 4000
+                            scores[p] += 4000
+                else:
+                    for p in players:
+                        if p == chombo_p:
+                            continue
+                        elif p == dealer:
+                            scores[chombo_p] -= 4000
+                            scores[p] += 4000
+                        else:
+                            scores[chombo_p] -= 2000
+                            scores[p] += 2000
+            dealer_continues = True
+
         elif win_type == "multi_ron":
             wins_data = r.get("multi_wins", [])
             loser_idx = players.index(loser) if loser in players else 0
@@ -170,16 +182,24 @@ def recalculate_from_history():
                 scores[closest_winner] += riichi_stick * 1000
             riichi_stick = 0
             if is_dealer_won:
-                honba += 1
-            else:
-                honba = 0
+                dealer_continues = True
                 
         elif win_type == "mid_ryukyoku":
+            ryukyoku_type = r.get("ryukyoku_type", "other")
+            dealer_continues = True
+            if ryukyoku_type != "other" and active_cfg.get("detail", {}).get(ryukyoku_type) == "ryukyoku":
+                dealer_continues = False
+
+        if dealer_continues:
             honba += 1
+        else:
+            current_round_idx += 1
+            honba = 0
 
     st.session_state.scores = scores
     st.session_state.riichi_stick = riichi_stick
     st.session_state.honba = honba
+    st.session_state.round_idx = current_round_idx
     autosave_draft()
 
 
@@ -276,12 +296,14 @@ def check_game_end():
     top_players = [p for p, s in scores.items() if s == top_score]
     
     west_ext = detail.get("west_extension", "under_30000")
+    b_cfg = rule_config.get("basic", {})
+    ret_score = b_cfg.get("return_score", 30000)
     
     # アガリやめ・テンパイやめの判定
     if round_idx >= 7: # 南4局以降
         dealer = st.session_state.players[round_idx % 4]
         # 終了に必要なスコアを満たしているか (西入なしなら常に満たす)
-        if top_score >= 30000 or (west_ext in ["none", "fixed_nan4"]):
+        if top_score >= ret_score or (west_ext in ["none", "fixed_nan4"]):
             if dealer in top_players:
                 if st.session_state.round_history:
                     last_round = st.session_state.round_history[-1]
@@ -299,10 +321,10 @@ def check_game_end():
     if west_ext == "none" or west_ext == "fixed_nan4":
         if round_idx >= 8:
             return "南4局終了"
-    else: # under_30000
-        if round_idx == 8 and top_score >= 30000:
+    else: # under_return_score (legacy name under_30000)
+        if round_idx == 8 and top_score >= ret_score:
             return f"南4局終了（トップ {top_score:,}点）"
-        elif round_idx >= 8 and top_score >= 30000:
+        elif round_idx >= 8 and top_score >= ret_score:
             return f"サドンデス終了（トップ {top_score:,}点）"
         elif round_idx >= 12:
             return "西4局終了（北入りなし）"
@@ -354,9 +376,7 @@ def apply_mid_ryukyoku(ryukyoku_type, tenpai_players=None):
     dealer = get_dealer()
     
     dealer_continues = True
-    if ryukyoku_type == "kyushu" and detail.get("kyushu") == "ryukyoku":
-        dealer_continues = False
-    elif ryukyoku_type == "sufon" and detail.get("sufon") == "ryukyoku":
+    if ryukyoku_type != "other" and detail.get(ryukyoku_type) == "ryukyoku":
         dealer_continues = False
         
     st.session_state.round_history.append({
@@ -430,21 +450,25 @@ def apply_chombo(player):
     scores = st.session_state.scores
     dealer = get_dealer()
 
-    if player == dealer:
-        for p in players:
-            if p != player:
-                scores[player] -= 4000
-                scores[p] += 4000
-    else:
-        for p in players:
-            if p == player:
-                continue
-            elif p == dealer:
-                scores[player] -= 4000
-                scores[p] += 4000
-            else:
-                scores[player] -= 2000
-                scores[p] += 2000
+    detail_cfg = st.session_state.get("current_rule_config", {}).get("detail", {})
+    chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
+
+    if chombo_rule == "mangan_pay":
+        if player == dealer:
+            for p in players:
+                if p != player:
+                    scores[player] -= 4000
+                    scores[p] += 4000
+        else:
+            for p in players:
+                if p == player:
+                    continue
+                elif p == dealer:
+                    scores[player] -= 4000
+                    scores[p] += 4000
+                else:
+                    scores[player] -= 2000
+                    scores[p] += 2000
 
     record_round(player, None, "chombo", 0)
     st.session_state.input_mode = "normal"

@@ -592,7 +592,8 @@ def show_endgame():
     r_config = st.session_state.get("current_rule_config")
     st.subheader("最終結果")
     for i, p in enumerate(sorted_p):
-        pt = calc.calc_special_point(scores[p], i + 1, rule_config=r_config)
+        c_count = sum(1 for r in st.session_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
+        pt = calc.calc_special_point(scores[p], i + 1, rule_config=r_config, chombo_count=c_count)
         st.write(f"{i + 1}位: **{p}**　{scores[p]:,}点　({pt:+.1f}pt)")
 
     st.divider()
@@ -615,11 +616,15 @@ def show_endgame():
                               win_type=r.get("win_type", ""),
                               tenpai=r.get("tenpai", []), local=db.IS_LOCAL)
             st.cache_data.clear()
-            result_rows = [
-                {"rank": i + 1, "name": p, "score": scores[p],
-                 "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config)}
-                for i, p in enumerate(sorted_p)
-            ]
+            result_rows = []
+            for i, p in enumerate(sorted_p):
+                c_count = sum(1 for r in st.session_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
+                result_rows.append({
+                    "rank": i + 1, 
+                    "name": p, 
+                    "score": scores[p],
+                    "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config, chombo_count=c_count)
+                })
             st.session_state.last_result = {"game_id": game_id, "date": date_str, "rows": result_rows}
             db.delete_draft()
             st.session_state.pop("draft_data", None)

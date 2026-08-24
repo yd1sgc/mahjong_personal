@@ -93,6 +93,7 @@ def show_stats():
         # 再計算
         game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
+    chombo_counts = calc.get_chombo_counts(df_rounds)
     df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
     rows = []
     for _, row in df_sorted.iterrows():
@@ -111,13 +112,15 @@ def show_stats():
                 continue
             score = int(row[f"p{i}_score"])
             rank = int(row[f"p{i}_rank"])
+            n_str = str(name).strip()
+            c_count = chombo_counts.get((row["game_id"], n_str), 0)
             rows.append({
                 "game_id": row["game_id"],
                 "date": row["date"],
-                "name": str(name).strip(),
+                "name": n_str,
                 "score": score,
                 "rank": rank,
-                "pt": calc.calc_special_point(score, rank, rule_config=cfg),
+                "pt": calc.calc_special_point(score, rank, rule_config=cfg, chombo_count=c_count),
             })
     df_results = pd.DataFrame(rows)
 

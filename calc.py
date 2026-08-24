@@ -60,15 +60,22 @@ def calc_oka_nashi_point(score, rank):
         return round(total, 1)
 
 
-def calc_special_point(score, rank, rule_config=None):
-    """ ウマ・オカ計算 (ルール設定動的反映版) """
+def calc_special_point(score, rank, rule_config=None, chombo_count=0):
+    """ ウマ・オカ計算 (ルール設定動的反映版・チョンボ減算対応) """
+    chombo_penalty = 0
+
     if rule_config and isinstance(rule_config, dict):
         b_cfg = rule_config.get("basic", rule_config)
+        d_cfg = rule_config.get("detail", {})
+        
+        if d_cfg.get("chombo_rule") == "pt_penalty":
+            chombo_penalty = d_cfg.get("chombo_pt", 20) * chombo_count
+
         ret_pt = b_cfg.get("return_score", RETURN_POINT)
         uma_list = b_cfg.get("uma", [50, 10, -10, -30])
         uma_pt = uma_list[rank - 1] if 1 <= rank <= len(uma_list) else 0
         base_pt = (score - ret_pt) / 1000
-        total = base_pt + uma_pt
+        total = base_pt + uma_pt - chombo_penalty
         if ROUND_INTEGER:
             return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
         else:
@@ -84,6 +91,14 @@ def calc_special_point(score, rank, rule_config=None):
         return round(total, 1)
 
 
+def get_chombo_counts(df_rounds):
+    counts = {}
+    if not df_rounds.empty and 'win_type' in df_rounds.columns:
+        for _, r in df_rounds[df_rounds['win_type'] == 'chombo'].iterrows():
+            key = (r['game_id'], r.get('winner', ''))
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
 def analyze_stats(df_games, df_rounds):
     """成績計算。(ゲーム集計DF, ラウンド集計DF, 詳細記録試合数) を返す"""
     if df_games.empty:
@@ -91,6 +106,8 @@ def analyze_stats(df_games, df_rounds):
 
     all_players = pd.unique(df_games[['p1_name', 'p2_name', 'p3_name', 'p4_name']].values.ravel('K'))
     valid_players = [p for p in all_players if pd.notna(p) and str(p).strip() != ""]
+
+    chombo_counts = get_chombo_counts(df_rounds)
 
     # ── 1. ゲームレベル集計（全試合対象）──────────────────────
     game_stats = {name: {
@@ -115,8 +132,9 @@ def analyze_stats(df_games, df_rounds):
                 continue
             score = row.get(f'p{i}_score', 25000)
             rank = row.get(f'p{i}_rank', 0)
+            c_count = chombo_counts.get((row['game_id'], name), 0)
             game_stats[name]["試合数"] += 1
-            game_stats[name]["総合pt"] += calc_special_point(score, rank, rule_config=cfg)
+            game_stats[name]["総合pt"] += calc_special_point(score, rank, rule_config=cfg, chombo_count=c_count)
             game_stats[name]["オカなし総合pt"] += calc_oka_nashi_point(score, rank)
             if rank > 0:
                 game_stats[name]["順位合計"] += rank
