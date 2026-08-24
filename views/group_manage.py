@@ -4,15 +4,15 @@ import database2 as db
 
 
 def show_group_manage():
-    c_h1, c_h2 = st.columns([1, 3])
-    with c_h1:
+    st.write("")
+    st.write("")
+    _, c_center, _ = st.columns([1, 2, 1])
+    with c_center:
         if st.button(" ホーム", use_container_width=True, key="grp_back_home"):
             st.session_state.view = "home"
             st.rerun()
-    with c_h2:
-        st.markdown("###  メンバー・グループ管理")
 
-    st.caption("新規グループ作成または既存グループの編集をステップ順に行えます。")
+    st.caption("グループ管理")
     st.divider()
 
     groups = db.get_groups()

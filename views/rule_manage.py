@@ -27,15 +27,15 @@ def _normalize_config(raw_cfg):
 
 
 def show_rule_manage():
-    c_h1, c_h2 = st.columns([1, 3])
-    with c_h1:
+    st.write("")
+    st.write("")
+    _, c_center, _ = st.columns([1, 2, 1])
+    with c_center:
         if st.button(" ホーム", use_container_width=True, key="rule_back_home"):
             st.session_state.view = "home"
             st.rerun()
-    with c_h2:
-        st.markdown("###  ルール作成・詳細管理")
 
-    st.caption("対局で適用するルール（持ち点・ウマ・アリアリルール・特殊ペナルティ等）を細かくカスタマイズ・管理できます。")
+    st.caption("ルール管理")
     st.divider()
 
     if "editing_rule_id" not in st.session_state:
