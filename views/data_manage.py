@@ -129,7 +129,7 @@ def show_data_manage():
                              disabled=not confirmed, use_container_width=True):
                     db.delete_game(int(sel_id))
                     st.cache_data.clear()
-                                        st.success(f"Game #{sel_id} を削除しました。")
+                    st.success(f"Game #{sel_id} を削除しました。")
                     st.rerun()
 
     with tab4:
@@ -149,7 +149,7 @@ def show_data_manage():
                             try:
                                 n = db.sync_to_supabase()
                                 st.cache_data.clear()
-                                                                st.success(f"{n}件の試合をSupabaseに同期しました。")
+                                st.success(f"{n}件の試合をSupabaseに同期しました。")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"同期に失敗しました: {e}")
@@ -159,7 +159,7 @@ def show_data_manage():
                     if st.button("送信せずに完了扱いにする（スキップ）", use_container_width=True):
                         db.mark_as_synced()
                         st.cache_data.clear()
-                                                st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
+                        st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
                         st.rerun()
 
 

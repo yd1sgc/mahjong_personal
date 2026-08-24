@@ -526,7 +526,7 @@ def show_endgame():
                               win_type=r.get("win_type", ""),
                               tenpai=r.get("tenpai", []), local=db.IS_LOCAL)
             st.cache_data.clear()
-                        result_rows = [
+            result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config)}
                 for i, p in enumerate(sorted_p)

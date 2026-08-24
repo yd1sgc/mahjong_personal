@@ -262,7 +262,7 @@ def show_round_edit(selected_game_id=None):
                 if has_change:
                     db.update_game_scores(preview['game_id'], preview['new_game_scores'])
                 st.cache_data.clear()
-                                                del st.session_state['re_preview']
+                del st.session_state['re_preview']
                 st.success("保存しました。")
                 st.rerun()
         with col2:
