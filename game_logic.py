@@ -143,6 +143,36 @@ def recalculate_from_history():
                     else:
                         scores[chombo_p] -= 2000
                         scores[p] += 2000
+                        
+        elif win_type == "multi_ron":
+            wins_data = r.get("multi_wins", [])
+            loser_idx = players.index(loser) if loser in players else 0
+            def distance(p):
+                return (players.index(p) - loser_idx) % 4 if p in players else 99
+            
+            closest_winner = min([wd["winner"] for wd in wins_data], key=distance) if wins_data else ""
+            is_dealer_won = False
+            
+            for wd in wins_data:
+                w = wd["winner"]
+                pts = wd["points_data"]["total"] + honba * 300
+                if loser in scores:
+                    scores[loser] -= pts
+                if w in scores:
+                    scores[w] += pts
+                if w == dealer:
+                    is_dealer_won = True
+                    
+            if closest_winner in scores:
+                scores[closest_winner] += riichi_stick * 1000
+            riichi_stick = 0
+            if is_dealer_won:
+                honba += 1
+            else:
+                honba = 0
+                
+        elif win_type == "mid_ryukyoku":
+            honba += 1
 
     st.session_state.scores = scores
     st.session_state.riichi_stick = riichi_stick
@@ -220,6 +250,63 @@ def apply_win(winner, win_type, points_data, loser=None):
     autosave_draft()
 
 
+def check_game_end():
+    """ルールに基づいてゲームが終了条件を満たしているかチェックし、終了理由を返す。満たしていない場合はNone"""
+    scores = st.session_state.scores
+    round_idx = st.session_state.round_idx
+    rule_config = st.session_state.get("current_rule_config", {})
+    detail = rule_config.get("detail", {})
+    
+    # トビ判定
+    tobi_end = detail.get("tobi_end", "under_zero")
+    if tobi_end == "under_zero":
+        for p, s in scores.items():
+            if s < 0:
+                return f"飛び終了（{p} が0点未満）"
+    elif tobi_end == "zero_or_less":
+        for p, s in scores.items():
+            if s <= 0:
+                return f"飛び終了（{p} が0点以下）"
+                
+    # トップの点数とプレイヤー
+    top_score = max(scores.values())
+    top_players = [p for p, s in scores.items() if s == top_score]
+    
+    west_ext = detail.get("west_extension", "under_30000")
+    
+    # アガリやめ・テンパイやめの判定
+    if round_idx >= 7: # 南4局以降
+        dealer = st.session_state.players[round_idx % 4]
+        # 終了に必要なスコアを満たしているか (西入なしなら常に満たす)
+        if top_score >= 30000 or (west_ext in ["none", "fixed_nan4"]):
+            if dealer in top_players:
+                if st.session_state.round_history:
+                    last_round = st.session_state.round_history[-1]
+                    # kyoku_nameから現在の局と同じか確認 (連荘による同じ局名か)
+                    if last_round["kyoku_name"] == get_round_name(round_idx):
+                        if detail.get("agari_yame", True):
+                            win_t = last_round.get("win_type", "")
+                            if win_t in ("ron", "tsumo") and last_round.get("winner") == dealer:
+                                return "アガリやめ（親トップ）"
+                            elif win_t == "multi_ron" and any(wd.get("winner") == dealer for wd in last_round.get("multi_wins", [])):
+                                return "アガリやめ（親トップ）"
+                        if detail.get("tenpai_yame", True):
+                            if last_round.get("win_type") == "ryukyoku" and dealer in last_round.get("tenpai", []):
+                                return "テンパイやめ（親トップ）"
+    if west_ext == "none" or west_ext == "fixed_nan4":
+        if round_idx >= 8:
+            return "南4局終了"
+    else: # under_30000
+        if round_idx == 8 and top_score >= 30000:
+            return f"南4局終了（トップ {top_score:,}点）"
+        elif round_idx >= 8 and top_score >= 30000:
+            return f"サドンデス終了（トップ {top_score:,}点）"
+        elif round_idx >= 12:
+            return "西4局終了（北入りなし）"
+            
+    return None
+
+
 def apply_ryukyoku(tenpai_players):
     save_snapshot()
     scores = st.session_state.scores
@@ -236,14 +323,102 @@ def apply_ryukyoku(tenpai_players):
             scores[p] += each_tenpai_get
 
     record_round(None, None, "ryukyoku", 0, tenpai=tenpai_players)
+    
+    renchan_rule = st.session_state.get("current_rule_config", {}).get("detail", {}).get("renchan_rule", "tenpai")
     dealer = get_dealer()
+    dealer_continues = False
+    
+    if renchan_rule == "tenpai":
+        dealer_continues = (dealer in tenpai_players)
+    elif renchan_rule == "agari":
+        dealer_continues = False
+    elif renchan_rule == "noten":
+        dealer_continues = True
+        
     st.session_state.honba += 1
-    if dealer not in tenpai_players:
+    if not dealer_continues:
         st.session_state.round_idx += 1
+        
     st.session_state.riichi_declared = []
     st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
     autosave_draft()
+
+
+def apply_mid_ryukyoku(ryukyoku_type, tenpai_players=None):
+    save_snapshot()
+    detail = st.session_state.get("current_rule_config", {}).get("detail", {})
+    dealer = get_dealer()
+    
+    dealer_continues = True
+    if ryukyoku_type == "kyushu" and detail.get("kyushu") == "ryukyoku":
+        dealer_continues = False
+    elif ryukyoku_type == "sufon" and detail.get("sufon") == "ryukyoku":
+        dealer_continues = False
+        
+    st.session_state.round_history.append({
+        "kyoku_name": get_round_name(),
+        "winner": "",
+        "loser": "",
+        "win_type": "mid_ryukyoku",
+        "score": 0,
+        "ryukyoku_type": ryukyoku_type,
+        "riichi": list(st.session_state.riichi_declared),
+        "furo": list(st.session_state.furo_declared),
+        "tenpai": tenpai_players or [],
+    })
+    
+    st.session_state.honba += 1
+    if not dealer_continues:
+        st.session_state.round_idx += 1
+        
+    st.session_state.riichi_declared = []
+    st.session_state.furo_declared = []
+    st.session_state.input_mode = "normal"
+    autosave_draft()
+
+
+def apply_multi_win(wins_data, loser):
+    save_snapshot()
+    scores = st.session_state.scores
+    players = st.session_state.players
+    honba = st.session_state.honba
+    dealer = get_dealer()
+    
+    loser_idx = players.index(loser) if loser in players else 0
+    def distance(p):
+        return (players.index(p) - loser_idx) % 4 if p in players else 99
+        
+    closest_winner = min([wd["winner"] for wd in wins_data], key=distance) if wins_data else ""
+    is_dealer_won = False
+    
+    for wd in wins_data:
+        w = wd["winner"]
+        total = wd["points_data"]["total"] + honba * 300
+        scores[loser] -= total
+        scores[w] += total
+        if w == dealer:
+            is_dealer_won = True
+            
+    if closest_winner in scores:
+        scores[closest_winner] += st.session_state.riichi_stick * 1000
+        
+    st.session_state.round_history.append({
+        "kyoku_name": get_round_name(),
+        "winner": closest_winner,
+        "loser": loser,
+        "win_type": "multi_ron",
+        "score": 0,
+        "multi_wins": wins_data,
+        "riichi": list(st.session_state.riichi_declared),
+        "furo": list(st.session_state.furo_declared),
+        "tenpai": [],
+    })
+    
+    st.session_state.riichi_stick = 0
+    end_round(dealer_continues=is_dealer_won)
+    autosave_draft()
+
 
 
 def apply_chombo(player):

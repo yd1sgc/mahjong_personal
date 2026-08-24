@@ -175,6 +175,10 @@ def generate_rule_description(config):
         f"西入延長：{west_str}",
         f"アガリ止め・テンパイ止め：{'あり' if detail.get('agari_yame', True) else 'なし'}",
     ]
+    
+    mid_ryu_map = {"renchan": "あり (連荘)", "ryukyoku": "あり (親流れ/流局)", "none": "なし (流局とせず続行)"}
+    kyushu_str = mid_ryu_map.get(detail.get("kyushu", "renchan"), "あり (連荘)")
+    shinko.append(f"途中流局 (九種・四風など)：{kyushu_str}")
 
     # 役満・特殊・チョンボ
     dubron_map = {"atama_hane": "なし (頭ハネ/上家取り)", "atama_hane_kyotaku": "あり (供託は頭ハネ)", "split": "あり (全分配)"}

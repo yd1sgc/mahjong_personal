@@ -181,7 +181,7 @@ def show_rule_manage():
             kuikae_in = st.selectbox("喰い替え", options=["不可 (禁止)", "可"], index=0 if d_init.get("kuikae", "forbidden") == "forbidden" else 1, key="rf_kuikae")
 
     # アコーディオン 3: 🔄 進行・流局・終局条件
-    with st.expander("▼ 【アコーディオン 3】 🔄 進行・流局・終局条件 (トビ・西入・途中流局4种・連荘)", expanded=False):
+    with st.expander("▼ 【アコーディオン 3】 🔄 進行・流局・終局条件 (トビ・西入・途中流局・連荘)", expanded=False):
         cg1, cg2, cg3 = st.columns(3)
         with cg1:
             tobi_in = st.selectbox("トビ (ハコ) 終了", options=["0点未満で終了", "0点以下で終了", "トビなし (継続)"], index=0 if d_init.get("tobi_end") == "under_zero" else (1 if d_init.get("tobi_end") == "zero_or_less" else 2), key="rf_tobi_end")
@@ -195,6 +195,10 @@ def show_rule_manage():
             agari_yame_in = st.checkbox("アガリ止め・テンパイ止めあり", value=bool(d_init.get("agari_yame", True)), key="rf_agariyame")
         with col_y2:
             tsumoban_in = st.checkbox("ツモ番なしリーチ許可", value=bool(d_init.get("tsumoban_none_riichi", False)), key="rf_tsumoban")
+
+        st.markdown("**途中流局（九種九牌・四風連打など）**")
+        mid_ryukyoku_in = st.selectbox("途中流局の扱い", options=["あり（連荘）", "あり（親流れ/流局）", "なし（そのまま続行）"], index=0 if d_init.get("kyushu") == "renchan" else (1 if d_init.get("kyushu") == "ryukyoku" else 2), key="rf_mid_ryukyoku")
+
 
     # アコーディオン 4: 🏆 ダブロン・役満・チョンボ
     with st.expander("▼ 【アコーディオン 4】 🏆 ダブロン・役満・チョンボ (ダブロン・パオ・チョンボ)", expanded=False):
@@ -235,6 +239,10 @@ def show_rule_manage():
             "renchan_rule": "tenpai" if "聴牌" in renchan_in else ("agari" if "和了" in renchan_in else "noten"),
             "agari_yame": agari_yame_in,
             "tsumoban_none_riichi": tsumoban_in,
+            "kyushu": "renchan" if "連荘" in mid_ryukyoku_in else ("ryukyoku" if "親流れ" in mid_ryukyoku_in else "none"),
+            "sufon": "renchan" if "連荘" in mid_ryukyoku_in else ("ryukyoku" if "親流れ" in mid_ryukyoku_in else "none"),
+            "sujin_riichi": "renchan" if "連荘" in mid_ryukyoku_in else ("ryukyoku" if "親流れ" in mid_ryukyoku_in else "none"),
+            "sukan": "renchan" if "連荘" in mid_ryukyoku_in else ("ryukyoku" if "親流れ" in mid_ryukyoku_in else "none"),
             "dubron": "atama_hane" if "なし" in dubron_in else ("atama_hane_kyotaku" if "供託は頭ハネ" in dubron_in else "split"),
             "pao": pao_in,
             "chombo_rule": "mangan_pay" if "満貫" in chombo_in else ("pt_penalty" if "直減算" in chombo_in else "agari_hoki"),
