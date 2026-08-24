@@ -80,12 +80,14 @@ def show_stats():
 
     # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
     if chosen_grp["group_id"] != "all" and not include_guests and chosen_grp.get("members"):
-        grp_mems = set(chosen_grp["members"])
+        all_members = db.get_members()
+        id_to_name = {m["member_id"]: m["member_name"] for m in all_members}
+        grp_mems_names = set(id_to_name[m_id] for m_id in chosen_grp["members"] if m_id in id_to_name)
         
         valid_games = []
         for _, row in df_games.iterrows():
             players_in_game = [row.get(f"p{i}_name") for i in range(1, 5)]
-            if all((p in grp_mems) for p in players_in_game if pd.notna(p) and str(p).strip()):
+            if all((p in grp_mems_names) for p in players_in_game if pd.notna(p) and str(p).strip()):
                 valid_games.append(row["game_id"])
         
         df_games = df_games[df_games["game_id"].isin(valid_games)]
