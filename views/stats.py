@@ -80,7 +80,7 @@ def show_stats():
 
     # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
     if chosen_grp["group_id"] != "all" and not include_guests and chosen_grp.get("members"):
-        all_members = db.get_members()
+        all_members = db.get_all_members()
         id_to_name = {m["member_id"]: m["member_name"] for m in all_members}
         grp_mems_names = set(id_to_name[m_id] for m_id in chosen_grp["members"] if m_id in id_to_name)
         
