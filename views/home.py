@@ -3,15 +3,10 @@ import database2 as db
 
 
 def show_home():
-    # ホーム画面用のカスタムCSS（ボタンを大きく太くする）
+    # ホーム画面用のカスタムCSS（太字のみ指定）
     st.markdown("""
     <style>
-    div.stButton > button {
-        height: 70px;
-        border-radius: 10px;
-    }
     div.stButton > button p {
-        font-size: 22px !important;
         font-weight: 700 !important;
     }
     </style>
