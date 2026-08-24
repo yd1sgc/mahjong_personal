@@ -1,6 +1,10 @@
 import cache_utils
 import uuid
 import streamlit as st
+def _set_view(v):
+    import streamlit as st
+    st.session_state.view = v
+
 import database2 as db
 import constants
 from constants import generate_rule_description, DEFAULT_RULE_CONFIG
@@ -32,9 +36,7 @@ def show_rule_manage():
     st.write("")
     _, c_center, _ = st.columns([1, 2, 1])
     with c_center:
-        if st.button(" ホーム", use_container_width=True, key="rule_back_home"):
-            st.session_state.view = "home"
-            st.rerun()
+        st.button(" ホーム", use_container_width=True, key="rule_back_home", on_click=_set_view, args=("home",))
 
     st.caption("ルール管理")
     st.divider()

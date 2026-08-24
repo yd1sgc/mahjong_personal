@@ -1,6 +1,10 @@
 import cache_utils
 import uuid
 import streamlit as st
+def _set_view(v):
+    import streamlit as st
+    st.session_state.view = v
+
 import database2 as db
 
 
@@ -9,9 +13,7 @@ def show_group_manage():
     st.write("")
     _, c_center, _ = st.columns([1, 2, 1])
     with c_center:
-        if st.button(" ホーム", use_container_width=True, key="grp_back_home"):
-            st.session_state.view = "home"
-            st.rerun()
+        st.button(" ホーム", use_container_width=True, key="grp_back_home", on_click=_set_view, args=("home",))
 
     st.caption("グループ管理")
     st.divider()
@@ -86,9 +88,7 @@ def show_group_manage():
         with col_r2:
             st.write("")
             st.write("")
-            if st.button(" ルール作成へ", use_container_width=True, key="t1_to_rule"):
-                st.session_state.view = "rule_manage"
-                st.rerun()
+            st.button(" ルール作成へ", use_container_width=True, key="t1_to_rule", on_click=_set_view, args=("rule_manage",))
 
         st.divider()
 
@@ -203,9 +203,7 @@ def show_group_manage():
                 with col_er2:
                     st.write("")
                     st.write("")
-                    if st.button(" ルール作成へ", use_container_width=True, key="t2_to_rule"):
-                        st.session_state.view = "rule_manage"
-                        st.rerun()
+                    st.button(" ルール作成へ", use_container_width=True, key="t2_to_rule", on_click=_set_view, args=("rule_manage",))
 
                 st.divider()
 

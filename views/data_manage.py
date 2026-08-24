@@ -1,4 +1,8 @@
 import streamlit as st
+def _set_view(v):
+    import streamlit as st
+    st.session_state.view = v
+
 import pandas as pd
 import database2 as db
 from views.round_edit import show_round_edit
@@ -163,6 +167,4 @@ def show_data_manage():
                         st.rerun()
 
 
-    if st.button("戻る", use_container_width=True):
-        st.session_state.view = "setup"
-        st.rerun()
+    st.button("戻る", use_container_width=True, on_click=_set_view, args=("setup",))

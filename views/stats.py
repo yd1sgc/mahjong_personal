@@ -1,5 +1,9 @@
 import cache_utils
 import streamlit as st
+def _set_view(v):
+    import streamlit as st
+    st.session_state.view = v
+
 import pandas as pd
 import database2 as db
 import calc
@@ -11,9 +15,7 @@ def show_stats():
         st.title("成績")
     with c_t2:
         st.markdown("<div style='margin-top: 1.2rem;'>", unsafe_allow_html=True)
-        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="top_to_home"):
-            st.session_state.view = "home"
-            st.rerun()
+        st.button(" ホーム画面へ", type="primary", use_container_width=True, key="top_to_home", on_click=_set_view, args=("home",))
         st.markdown("</div>", unsafe_allow_html=True)
 
     df_all = cache_utils.get_games_data()
@@ -68,9 +70,7 @@ def show_stats():
 
     if df_games.empty:
         st.info("条件に一致する対局記録がありません。")
-        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
-            st.session_state.view = "home"
-            st.rerun()
+        st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home", on_click=_set_view, args=("home",))
         return
 
     all_names = pd.unique(df_games[['p1_name', 'p2_name', 'p3_name', 'p4_name']].values.ravel('K'))
@@ -338,6 +338,4 @@ def show_stats():
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
-    if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home"):
-        st.session_state.view = "home"
-        st.rerun()
+    st.button(" ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home", on_click=_set_view, args=("home",))

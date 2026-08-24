@@ -1,5 +1,9 @@
 import cache_utils
 import streamlit as st
+def _set_view(v):
+    import streamlit as st
+    st.session_state.view = v
+
 from datetime import datetime
 import database2 as db
 import calc
@@ -41,9 +45,7 @@ def show_setup():
     st.write("")
     _, c_center, _ = st.columns([1, 2, 1])
     with c_center:
-        if st.button(" ホーム", use_container_width=True, key="setup_back_home"):
-            st.session_state.view = "home"
-            st.rerun()
+        st.button(" ホーム", use_container_width=True, key="setup_back_home", on_click=_set_view, args=("home",))
 
     # ── グループ＆ルール選択 ──────────────────────────────────
     groups = cache_utils.get_groups()
@@ -274,6 +276,4 @@ def show_result():
         for row in result["rows"]:
             st.write(f"{row['rank']}位: **{row['name']}**　{row['score']:,}点　({row['pt']:+.1f}pt)")
     st.divider()
-    if st.button("閉じる", type="primary", use_container_width=True):
-        st.session_state.view = "home"
-        st.rerun()
+    st.button("閉じる", type="primary", use_container_width=True, on_click=_set_view, args=("home",))
