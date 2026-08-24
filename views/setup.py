@@ -176,6 +176,7 @@ def show_setup():
             st.session_state.game_active = True
             st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
+            st.session_state.view = "game"
             game_logic.autosave_draft()
             st.rerun()
     with c2:
