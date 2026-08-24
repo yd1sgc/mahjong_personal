@@ -122,7 +122,7 @@ def show_stats():
                 "rank": rank,
                 "pt": calc.calc_special_point(score, rank, rule_config=cfg, chombo_count=c_count),
             })
-    df_results = pd.DataFrame(rows)
+    df_results = pd.DataFrame(rows, columns=["game_id", "date", "name", "score", "rank", "pt"])
 
     # ── 試合成績テーブル ──────────────────────────────────
     if not game_stats.empty:
