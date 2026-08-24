@@ -163,7 +163,8 @@ def recalculate_from_history():
             wins_data = r.get("multi_wins", [])
             loser_idx = players.index(loser) if loser in players else 0
             def distance(p):
-                return (players.index(p) - loser_idx) % 4 if p in players else 99
+                idx = players.index(p) if p in players else 0
+                return (idx - loser_idx) % 4
             
             closest_winner = min([wd["winner"] for wd in wins_data], key=distance) if wins_data else ""
             is_dealer_won = False
@@ -322,10 +323,11 @@ def check_game_end():
         if round_idx >= 8:
             return "南4局終了"
     else: # under_return_score (legacy name under_30000)
-        if round_idx == 8 and top_score >= ret_score:
-            return f"南4局終了（トップ {top_score:,}点）"
-        elif round_idx >= 8 and top_score >= ret_score:
-            return f"サドンデス終了（トップ {top_score:,}点）"
+        if top_score >= ret_score:
+            if round_idx == 8 and len([r for r in st.session_state.round_history if r["kyoku_name"].startswith("西")]) == 0:
+                return f"南4局終了（トップ {top_score:,}点）"
+            elif round_idx >= 8:
+                return f"サドンデス終了（トップ {top_score:,}点）"
         elif round_idx >= 12:
             return "西4局終了（北入りなし）"
             
@@ -410,7 +412,8 @@ def apply_multi_win(wins_data, loser):
     
     loser_idx = players.index(loser) if loser in players else 0
     def distance(p):
-        return (players.index(p) - loser_idx) % 4 if p in players else 99
+        idx = players.index(p) if p in players else 0
+        return (idx - loser_idx) % 4
         
     closest_winner = min([wd["winner"] for wd in wins_data], key=distance) if wins_data else ""
     is_dealer_won = False

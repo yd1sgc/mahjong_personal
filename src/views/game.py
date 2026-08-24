@@ -89,7 +89,7 @@ def show_game():
 
         tags = []
         if p == dealer:
-            tags.append("")
+            tags.append("★")
         if is_riichi:
             tags.append("立")
         tag_str = " ".join(tags)
@@ -191,7 +191,7 @@ def show_win_input():
     if step == 0:
         st.title("誰が和了？")
         for p in players:
-            mark = "  " if p == game_logic.get_dealer() else ""
+            mark = " ★" if p == game_logic.get_dealer() else ""
             if st.button(f"{p}{mark}", key=f"w_{p}",
                          type="primary", use_container_width=True):
                 data["winner"] = p
@@ -328,7 +328,7 @@ def show_win_input():
         already_won = [wd["winner"] for wd in data["winners_data"]]
         for p in players:
             if p != loser and p not in already_won:
-                mark = "  " if p == game_logic.get_dealer() else ""
+                mark = " ★" if p == game_logic.get_dealer() else ""
                 if st.button(f"{p}{mark}", key=f"m_w_{p}", type="primary", use_container_width=True):
                     data["current_winner"] = p
                     data["current_is_dealer"] = (p == game_logic.get_dealer())
