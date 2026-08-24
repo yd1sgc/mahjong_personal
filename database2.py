@@ -221,7 +221,10 @@ def get_connection():
         raise RuntimeError("オンラインDB接続には psycopg2-binary が必要です")
     if not REMOTE_DB_KWARGS:
         raise RuntimeError("リモートDB設定が初期化されていません")
-    return psycopg2.connect(**REMOTE_DB_KWARGS)
+    kwargs = dict(REMOTE_DB_KWARGS)
+    if "connect_timeout" not in kwargs:
+        kwargs["connect_timeout"] = 3
+    return psycopg2.connect(**kwargs)
 
 
 @contextmanager
