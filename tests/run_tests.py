@@ -1,6 +1,12 @@
 import sys
+import os
 import types
 import inspect
+
+# Add root and src to path
+project_root = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, 'src'))
 
 # Mock streamlit if not installed
 if "streamlit" not in sys.modules:

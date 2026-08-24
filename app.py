@@ -1,4 +1,7 @@
 import streamlit as st
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 import database2 as db
 from views.setup import show_setup, show_simple_input, show_result
 from views.game import (show_game, show_win_input, show_ryukyoku_input,

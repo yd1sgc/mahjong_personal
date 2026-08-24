@@ -16,3 +16,8 @@ main_app2.py
 
 # ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰ï¼ˆçµ¶å¯¾ã«GitHubã«ã‚¢ãƒƒãƒ—ã—ãªã„ï¼‰
 .streamlit/secrets.toml
+
+# Šu—£—pƒfƒBƒŒƒNƒgƒŠiAIEGit‘ÎÛŠOj
+archive/
+data/
+

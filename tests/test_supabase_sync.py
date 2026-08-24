@@ -137,7 +137,7 @@ def test_sync_to_supabase_executes_queries_and_marks_synced():
 
 
 def test_migration_sql_file_exists_and_contains_expected_tables():
-    sql_path = os.path.join(os.path.dirname(__file__), "migrations", "supabase_migration_v1.sql")
+    sql_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations", "supabase_migration_v1.sql")
     assert os.path.exists(sql_path), "Migration SQL file should exist"
     
     with open(sql_path, "r", encoding="utf-8") as f:
