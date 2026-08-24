@@ -16,6 +16,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+is_local_mode = st.secrets.get("local_mode", False)
+local_db_path = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if is_local_mode else None
+try:
+    remote_db_kwargs = dict(st.secrets["database"])
+except KeyError:
+    remote_db_kwargs = None
+
+db.init_config(
+    is_local=is_local_mode,
+    sqlite_path=local_db_path,
+    remote_db_kwargs=remote_db_kwargs
+)
+
 st.markdown("""
 <style>
 .stButton > button {
@@ -133,7 +146,7 @@ hr {
 
 def init_session():
     defaults = {
-        "view": "home" if db.IS_LOCAL else "stats",
+        "view": "home" if is_local_mode else "stats",
         "game_active": False,
         "players": [],
         "scores": {},
@@ -161,15 +174,15 @@ def init_session():
 init_session()
 
 if "db_initialized" not in st.session_state:
-    if db.IS_LOCAL:
+    if is_local_mode:
         db.init_local_db()
     else:
         db.init_db()
     st.session_state["db_initialized"] = True
 
-if db.IS_LOCAL and "online" not in st.session_state:
-    db.check_connectivity()
-if not db.IS_LOCAL:
+if is_local_mode and "online" not in st.session_state:
+    st.session_state["online"] = db.check_connectivity()
+if not is_local_mode:
     st.session_state["online"] = True
 
 if "draft_data" not in st.session_state:
@@ -185,7 +198,7 @@ if "draft_data" not in st.session_state:
 # ── 認証 ───────────────────────────────────────────────────
 
 def check_auth():
-    if db.IS_LOCAL or st.session_state.get("authed"):
+    if is_local_mode or st.session_state.get("authed"):
         return True
     st.title("麻雀スコア")
     pw = st.text_input("パスワード", type="password")

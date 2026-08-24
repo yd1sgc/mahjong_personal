@@ -232,7 +232,7 @@ def show_simple_input():
                 rule_config=r_config,
                 player_member_ids=st.session_state.get("player_member_ids")
             )
-            db.get_games_data.clear()
+            st.cache_data.clear()
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config)}

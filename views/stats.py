@@ -1,3 +1,4 @@
+import cache_utils
 import streamlit as st
 import pandas as pd
 import database2 as db
@@ -15,7 +16,7 @@ def show_stats():
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    df_all = db.get_games_data()
+    df_all = cache_utils.get_games_data()
 
     # ── フィルター選択エリア ─────────────────────────────────
     groups = db.get_groups()
@@ -55,8 +56,8 @@ def show_stats():
 
     st.divider()
 
-    df_games = db.get_games_data(year_filter=selected_year)
-    df_rounds = db.get_rounds_data()
+    df_games = cache_utils.get_games_data(year_filter=selected_year)
+    df_rounds = cache_utils.get_rounds_data()
 
     # ルールおよびグループでの対局データ絞り込み (DBカラムが存在する場合)
     if not df_games.empty:

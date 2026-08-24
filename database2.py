@@ -2,7 +2,6 @@ import json
 import os
 import sqlite3
 import pandas as pd
-import streamlit as st
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -11,8 +10,16 @@ try:
 except ImportError:
     psycopg2 = None
 
-IS_LOCAL = st.secrets.get("local_mode", False)
-SQLITE_PATH = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if IS_LOCAL else None
+# 設定は init_config() により外部(app.py等)から注入される
+IS_LOCAL = False
+SQLITE_PATH = None
+REMOTE_DB_KWARGS = None
+
+def init_config(is_local=False, sqlite_path=None, remote_db_kwargs=None):
+    global IS_LOCAL, SQLITE_PATH, REMOTE_DB_KWARGS
+    IS_LOCAL = is_local
+    SQLITE_PATH = sqlite_path
+    REMOTE_DB_KWARGS = remote_db_kwargs
 
 IDENTITY_SCHEMA_VERSION = 1
 
@@ -212,18 +219,9 @@ def _local_db():
 def get_connection():
     if psycopg2 is None:
         raise RuntimeError("オンラインDB接続には psycopg2-binary が必要です")
-    try:
-        db = st.secrets["database"]
-    except KeyError:
-        raise RuntimeError("Streamlit secrets に [database] セクションがありません") from None
-    return psycopg2.connect(
-        host=db["host"],
-        port=int(db["port"]),
-        user=db["user"],
-        password=db["password"],
-        dbname=db["dbname"],
-        connect_timeout=3
-    )
+    if not REMOTE_DB_KWARGS:
+        raise RuntimeError("リモートDB設定が初期化されていません")
+    return psycopg2.connect(**REMOTE_DB_KWARGS)
 
 
 @contextmanager
@@ -368,10 +366,8 @@ def check_connectivity():
     try:
         with _remote_db() as conn:
             pass
-        st.session_state["online"] = True
         return True
     except Exception:
-        st.session_state["online"] = False
         return False
 
 
@@ -619,14 +615,6 @@ def init_db():
         )''')
 
 
-def clear_cache():
-    """データ更新時に一瞬で古いキャッシュを全消去して最新DBを0秒反映させる安全関数"""
-    try:
-        st.cache_data.clear()
-    except Exception:
-        pass
-
-
 def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None, player_member_ids=None):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     rule_json_str = json.dumps(rule_config, ensure_ascii=False) if rule_config else None
@@ -663,7 +651,6 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
                     VALUES (?, ?, ?, ?, ?, ?)''', 
                     (next_id, seat, m_id, name, score, rank))
 
-        clear_cache()
         return next_id
     with _remote_db() as conn:
         c = conn.cursor()
@@ -693,7 +680,6 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
                 VALUES (%s, %s, %s, %s, %s, %s)''', 
                 (next_id, seat, m_id, name, score, rank))
 
-    clear_cache()
     return next_id
 
 
@@ -728,7 +714,6 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
         ))
 
 
-@st.cache_data(ttl=300)
 def get_games_data(year_filter=None):
     if IS_LOCAL:
         with _local_db() as conn:
@@ -795,7 +780,6 @@ def get_games_data(year_filter=None):
     return df.sort_values('game_id', ascending=False)
 
 
-@st.cache_data(ttl=300)
 def get_rounds_data():
     if IS_LOCAL:
         with _local_db() as conn:
@@ -1016,7 +1000,6 @@ def delete_draft():
         return False
 
 
-@st.cache_data(ttl=300)
 def load_rounds_by_game(game_id):
     if IS_LOCAL:
         with _local_db() as conn:
