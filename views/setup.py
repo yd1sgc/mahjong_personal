@@ -62,11 +62,14 @@ def show_setup():
         g_copy["group_name_disp"] = f"[{d_id}] {g['group_name']}"
         formatted_groups.append(g_copy)
 
-    group_options = [{"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "rule_shinseki"}] + formatted_groups
+    group_options = [
+        {"group_id": "none", "group_name": "--- グループを選択してください ---", "group_name_disp": "--- グループを選択してください ---", "members": []},
+        {"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "rule_shinseki"}
+    ] + formatted_groups
 
     # セッション状態の初期化
     if "selected_group_id" not in st.session_state:
-        st.session_state.selected_group_id = "all"
+        st.session_state.selected_group_id = "none"
     if "active_rule_id" not in st.session_state:
         st.session_state.active_rule_id = all_rules[0]["rule_id"] if all_rules else "m_league"
 
@@ -81,6 +84,7 @@ def show_setup():
             st.session_state.selected_group_id = chosen_group["group_id"]
             if chosen_group.get("default_rule_id") and chosen_group["default_rule_id"] in rule_map:
                 st.session_state.active_rule_id = chosen_group["default_rule_id"]
+                st.session_state.setup_rule_select = chosen_group["default_rule_id"]
             st.rerun()
 
     with col_r:
@@ -94,75 +98,81 @@ def show_setup():
 
     st.divider()
 
-    # ── 席順スロット表示 ────────────────────────────────────
-    selected = st.session_state.selected_players
-    wind_labels = ["東", "南", "西", "北"]
-
-    for row in range(2):
-        cols = st.columns(2)
-        for col_idx in range(2):
-            i = row * 2 + col_idx
-            wind = wind_labels[i]
-            with cols[col_idx]:
-                if i < len(selected):
-                    if st.button(f"{wind}: {selected[i]}", key=f"slot_{i}",
-                                 type="primary", use_container_width=True):
-                        selected.pop(i)
-                        st.rerun()
-                else:
-                    st.button(f"{wind}: —", key=f"slot_{i}",
-                               disabled=True, use_container_width=True)
-
-    st.divider()
-
-    # ── メンバーボタン一覧 ───────────────────────────────────
-    all_members = db.get_all_members()
-    target_members_ids = chosen_group.get("members", [])
-    mem_name_map = {m["member_id"]: m["member_name"] for m in all_members}
-    target_members_names = [mem_name_map[mid] for mid in target_members_ids if mid in mem_name_map]
-
-    if chosen_group["group_id"] == "all" or not target_members_names:
-        display_members = [m["member_name"] for m in all_members]
+    if st.session_state.selected_group_id == "none":
+        st.info("👆 まずは上部で「対局するグループ」と「適用ルール」を選択してください。")
+        st.caption("グループとルールが決定するまで、メンバーは選択できません。")
+        st.divider()
     else:
-        show_all = st.checkbox("全登録メンバーを表示する", value=False, key="setup_show_all_mems")
-        display_members = [m["member_name"] for m in all_members] if show_all else target_members_names
+        # ── 席順スロット表示 ────────────────────────────────────
+        selected = st.session_state.selected_players
+        wind_labels = ["東", "南", "西", "北"]
 
-    # ID表記付きマップ
-    mem_id_map = {m["member_name"]: f"#{m['member_id']:02d}" for m in all_members}
+        for row in range(2):
+            cols = st.columns(2)
+            for col_idx in range(2):
+                i = row * 2 + col_idx
+                wind = wind_labels[i]
+                with cols[col_idx]:
+                    if i < len(selected):
+                        if st.button(f"{wind}: {selected[i]}", key=f"slot_{i}",
+                                     type="primary", use_container_width=True):
+                            selected.pop(i)
+                            st.rerun()
+                    else:
+                        st.button(f"{wind}: —", key=f"slot_{i}",
+                                   disabled=True, use_container_width=True)
 
-    grid = st.columns(2)
-    for i, m in enumerate(display_members):
-        with grid[i % 2]:
-            is_sel = m in selected
-            order = selected.index(m) + 1 if is_sel else None
-            id_prefix = f"({mem_id_map[m]}) " if m in mem_id_map else ""
-            label = f"[{order}] {id_prefix}{m}" if is_sel else f"{id_prefix}{m}"
-            if st.button(label, key=f"sel_{m}",
-                         type="primary" if is_sel else "secondary",
-                         use_container_width=True):
-                if is_sel:
-                    selected.remove(m)
-                elif len(selected) < 4:
-                    selected.append(m)
+        st.divider()
+
+        # ── メンバーボタン一覧 ───────────────────────────────────
+        all_members = db.get_all_members()
+        target_members_ids = chosen_group.get("members", [])
+        mem_name_map = {m["member_id"]: m["member_name"] for m in all_members}
+        target_members_names = [mem_name_map[mid] for mid in target_members_ids if mid in mem_name_map]
+
+        if chosen_group["group_id"] == "all" or not target_members_names:
+            display_members = [m["member_name"] for m in all_members]
+        else:
+            show_all = st.checkbox("全登録メンバーを表示する", value=False, key="setup_show_all_mems")
+            display_members = [m["member_name"] for m in all_members] if show_all else target_members_names
+
+        # ID表記付きマップ
+        mem_id_map = {m["member_name"]: f"#{m['member_id']:02d}" for m in all_members}
+
+        grid = st.columns(2)
+        for i, m in enumerate(display_members):
+            with grid[i % 2]:
+                is_sel = m in selected
+                order = selected.index(m) + 1 if is_sel else None
+                id_prefix = f"({mem_id_map[m]}) " if m in mem_id_map else ""
+                label = f"[{order}] {id_prefix}{m}" if is_sel else f"{id_prefix}{m}"
+                if st.button(label, key=f"sel_{m}",
+                             type="primary" if is_sel else "secondary",
+                             use_container_width=True):
+                    if is_sel:
+                        selected.remove(m)
+                    elif len(selected) < 4:
+                        selected.append(m)
+                    st.rerun()
+
+        guest_name = st.text_input("➕ メンバーその場追加", placeholder="メンバー名を入力して追加",
+                                   key="guest_input")
+        if guest_name:
+            if st.button("メンバーを追加する",
+                         disabled=(guest_name in selected)):
+                db.add_member(guest_name.strip())
+                if len(selected) < 4 and guest_name.strip() not in selected:
+                    selected.append(guest_name.strip())
                 st.rerun()
 
-    guest_name = st.text_input("➕ メンバーその場追加", placeholder="メンバー名を入力して追加",
-                               key="guest_input")
-    if guest_name:
-        if st.button("メンバーを追加する",
-                     disabled=(guest_name in selected)):
-            db.add_member(guest_name.strip())
-            if len(selected) < 4 and guest_name.strip() not in selected:
-                selected.append(guest_name.strip())
-            st.rerun()
+        st.divider()
 
-    st.divider()
-
-    ready = len(selected) == 4
+    ready = (st.session_state.selected_group_id != "none") and (len(st.session_state.selected_players) == 4)
     c1, c2 = st.columns(2)
     with c1:
         if st.button("詳細モードで開始", type="primary",
                      disabled=not ready, use_container_width=True):
+            selected = st.session_state.selected_players
             # 選択中のルールの配給原点 (init_score) を使用し、セッションにルール設定を保存
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             init_score_val = active_cfg.get("basic", {}).get("init_score", active_cfg.get("init_score", INIT_SCORE))
@@ -181,6 +191,7 @@ def show_setup():
             st.rerun()
     with c2:
         if st.button("結果のみ入力", disabled=not ready, use_container_width=True):
+            selected = st.session_state.selected_players
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             st.session_state.players = list(selected)
             mem_name_to_id = {m["member_name"]: m["member_id"] for m in all_members}
