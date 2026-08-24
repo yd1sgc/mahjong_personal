@@ -1,3 +1,4 @@
+import cache_utils
 import streamlit as st
 import pandas as pd
 import database2 as db
@@ -10,26 +11,65 @@ def show_stats():
         st.title("成績")
     with c_t2:
         st.markdown("<div style='margin-top: 1.2rem;'>", unsafe_allow_html=True)
-        if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="top_to_setup"):
-            st.session_state.view = "setup"
+        if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="top_to_home"):
+            st.session_state.view = "home"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    df_all = db.get_games_data()
+    df_all = cache_utils.get_games_data()
 
-    year_options = ["全期間"]
-    if not df_all.empty and 'date' in df_all.columns:
-        years = sorted(df_all['date'].dt.year.dropna().unique().astype(int), reverse=True)
-        year_options += [str(y) for y in years]
-    selected_year = st.selectbox("集計期間", year_options, key="stats_year")
+    # ── フィルター選択エリア ─────────────────────────────────
+    groups = db.get_groups()
+    rules = db.get_rule_templates()
+    
+    def _stats_rule_label(r):
+        if r.get("rule_id") == "all":
+            return r["rule_name"]
+        tag = "公式" if r.get("kind") == "official" else "カスタム"
+        return f"【{tag}】{r['rule_name']}"
 
-    df_games = db.get_games_data(year_filter=selected_year)
-    df_rounds = db.get_rounds_data()
+    rule_map = {r["rule_id"]: _stats_rule_label(r) for r in rules}
+
+    grp_options = [{"group_id": "all", "group_name": "全グループ (全体)", "members": []}] + groups
+    rule_options = [{"rule_id": "all", "rule_name": "全ルール (全体)", "kind": "all"}] + rules
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        sel_grp_name = st.selectbox("👥 グループ", [g["group_name"] for g in grp_options], key="stats_grp_sel")
+        chosen_grp = next((g for g in grp_options if g["group_name"] == sel_grp_name), grp_options[0])
+    with col_f2:
+        rule_disp_names = [_stats_rule_label(r) for r in rule_options]
+        sel_rule_disp = st.selectbox("⚙️ ルール", rule_disp_names, key="stats_rule_sel")
+        chosen_rule = next((r for r in rule_options if _stats_rule_label(r) == sel_rule_disp), rule_options[0])
+
+    col_f3, col_f4 = st.columns(2)
+    with col_f3:
+        year_options = ["全期間"]
+        if not df_all.empty and 'date' in df_all.columns:
+            years = sorted(df_all['date'].dt.year.dropna().unique().astype(int), reverse=True)
+            year_options += [str(y) for y in years]
+        selected_year = st.selectbox("集計期間", year_options, key="stats_year")
+    with col_f4:
+        st.markdown("<div style='margin-top: 1.6rem;'>", unsafe_allow_html=True)
+        include_guests = st.checkbox("☑ ゲストも表示する", value=(chosen_grp["group_id"] == "all"), key="stats_include_guests")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    df_games = cache_utils.get_games_data(year_filter=selected_year)
+    df_rounds = cache_utils.get_rounds_data()
+
+    # ルールおよびグループでの対局データ絞り込み (DBカラムが存在する場合)
+    if not df_games.empty:
+        if chosen_rule["rule_id"] != "all" and "rule_id" in df_games.columns:
+            df_games = df_games[df_games["rule_id"] == chosen_rule["rule_id"]]
+        if chosen_grp["group_id"] != "all" and "group_id" in df_games.columns:
+            df_games = df_games[df_games["group_id"] == chosen_grp["group_id"]]
 
     if df_games.empty:
-        st.info("記録がまだありません。対局を終局・記録すると反映されます。")
-        if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="empty_to_setup"):
-            st.session_state.view = "setup"
+        st.info("条件に一致する対局記録がありません。")
+        if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
+            st.session_state.view = "home"
             st.rerun()
         return
 
@@ -38,9 +78,26 @@ def show_stats():
 
     game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
+    # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
+    if chosen_grp["group_id"] != "all" and not include_guests and chosen_grp.get("members"):
+        grp_mems = set(chosen_grp["members"])
+        if not game_stats.empty and "名前" in game_stats.columns:
+            game_stats = game_stats[game_stats["名前"].isin(grp_mems)]
+        if not round_stats.empty and "名前" in round_stats.columns:
+            round_stats = round_stats[round_stats["名前"].isin(grp_mems)]
+
     df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
     rows = []
     for _, row in df_sorted.iterrows():
+        cfg = None
+        rule_json = row.get("applied_rule_json")
+        if pd.notna(rule_json) and isinstance(rule_json, str) and rule_json.strip():
+            try:
+                import json
+                cfg = json.loads(rule_json)
+            except Exception:
+                cfg = None
+
         for i in range(1, 5):
             name = row.get(f"p{i}_name")
             if pd.isna(name) or not str(name).strip():
@@ -53,7 +110,7 @@ def show_stats():
                 "name": str(name).strip(),
                 "score": score,
                 "rank": rank,
-                "pt": calc.calc_special_point(score, rank),
+                "pt": calc.calc_special_point(score, rank, rule_config=cfg),
             })
     df_results = pd.DataFrame(rows)
 
@@ -269,6 +326,6 @@ def show_stats():
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
-    if st.button("🀄 対局入力へ", type="primary", use_container_width=True, key="bottom_to_setup"):
-        st.session_state.view = "setup"
+    if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home"):
+        st.session_state.view = "home"
         st.rerun()

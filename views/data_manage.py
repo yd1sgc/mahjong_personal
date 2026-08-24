@@ -64,7 +64,7 @@ def show_data_manage():
                 st.caption(f"計 {len(df)}件（先頭10件表示）")
                 if st.button("取込む", type="primary", use_container_width=True):
                     count = db.import_games_from_df(df)
-                    db.get_games_data.clear()
+                    st.cache_data.clear()
                     st.success(f"{count}件を取込みました。")
                     st.rerun()
             except Exception as e:
@@ -106,7 +106,7 @@ def show_data_manage():
                 st.caption(f"合計: {total:,}点")
                 if st.button("スコアを保存", type="primary", disabled=not ok, use_container_width=True):
                     db.update_game_scores(sel_id, new_scores)
-                    db.get_games_data.clear()
+                    st.cache_data.clear()
                     st.success("スコアを保存しました。")
                     st.rerun()
 
@@ -128,8 +128,7 @@ def show_data_manage():
                 if st.button("この試合を削除する", type="primary",
                              disabled=not confirmed, use_container_width=True):
                     db.delete_game(int(sel_id))
-                    db.get_games_data.clear()
-                    db.get_rounds_data.clear()
+                    st.cache_data.clear()
                     st.success(f"Game #{sel_id} を削除しました。")
                     st.rerun()
 
@@ -149,8 +148,7 @@ def show_data_manage():
                         if st.button("今すぐ同期する", type="primary", use_container_width=True):
                             try:
                                 n = db.sync_to_supabase()
-                                db.get_games_data.clear()
-                                db.get_rounds_data.clear()
+                                st.cache_data.clear()
                                 st.success(f"{n}件の試合をSupabaseに同期しました。")
                                 st.rerun()
                             except Exception as e:
@@ -160,8 +158,7 @@ def show_data_manage():
                 with c2:
                     if st.button("送信せずに完了扱いにする（スキップ）", use_container_width=True):
                         db.mark_as_synced()
-                        db.get_games_data.clear()
-                        db.get_rounds_data.clear()
+                        st.cache_data.clear()
                         st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
                         st.rerun()
 

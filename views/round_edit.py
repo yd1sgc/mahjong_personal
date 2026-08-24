@@ -1,3 +1,4 @@
+import cache_utils
 import streamlit as st
 import database2 as db
 
@@ -122,7 +123,7 @@ def show_round_edit(selected_game_id=None):
     players = [str(game_row[f'p{i}_name']) for i in range(1, 5)]
     game_scores = {str(game_row[f'p{i}_name']): int(game_row[f'p{i}_score']) for i in range(1, 5)}
 
-    df_rounds = db.load_rounds_by_game(sel_id)
+    df_rounds = cache_utils.load_rounds_by_game(sel_id)
     if df_rounds.empty:
         st.info("この試合の局記録がありません。")
         return
@@ -260,9 +261,7 @@ def show_round_edit(selected_game_id=None):
                 db.update_round(preview['round_id'], preview['new_round_fields'])
                 if has_change:
                     db.update_game_scores(preview['game_id'], preview['new_game_scores'])
-                db.get_games_data.clear()
-                db.get_rounds_data.clear()
-                db.load_rounds_by_game.clear()
+                st.cache_data.clear()
                 del st.session_state['re_preview']
                 st.success("保存しました。")
                 st.rerun()

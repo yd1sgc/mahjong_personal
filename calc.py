@@ -60,8 +60,20 @@ def calc_oka_nashi_point(score, rank):
         return round(total, 1)
 
 
-def calc_special_point(score, rank):
-    """ ウマ・オカ計算 (設定反映版) """
+def calc_special_point(score, rank, rule_config=None):
+    """ ウマ・オカ計算 (ルール設定動的反映版) """
+    if rule_config and isinstance(rule_config, dict):
+        ret_pt = rule_config.get("return_score", RETURN_POINT)
+        uma_list = rule_config.get("uma", [50, 10, -10, -30])
+        uma_pt = uma_list[rank - 1] if 1 <= rank <= len(uma_list) else 0
+        base_pt = (score - ret_pt) / 1000
+        total = base_pt + uma_pt
+        if ROUND_INTEGER:
+            return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
+        else:
+            return round(total, 1)
+
+    # 素点の計算: (持ち点 - 返し点) / 1000
     base_pt = (score - RETURN_POINT) / 1000
     uma_pt = UMA_SETTINGS.get(rank, 0)
     total = base_pt + uma_pt
@@ -86,6 +98,16 @@ def analyze_stats(df_games, df_rounds):
     } for name in valid_players}
 
     for _, row in df_games.iterrows():
+        # 対局ごとのルールスナップショット解読
+        cfg = None
+        rule_json = row.get('applied_rule_json')
+        if pd.notna(rule_json) and isinstance(rule_json, str) and rule_json.strip():
+            try:
+                import json
+                cfg = json.loads(rule_json)
+            except Exception:
+                cfg = None
+
         for i in range(1, 5):
             name = row.get(f'p{i}_name')
             if name not in game_stats:
@@ -93,7 +115,7 @@ def analyze_stats(df_games, df_rounds):
             score = row.get(f'p{i}_score', 25000)
             rank = row.get(f'p{i}_rank', 0)
             game_stats[name]["試合数"] += 1
-            game_stats[name]["総合pt"] += calc_special_point(score, rank)
+            game_stats[name]["総合pt"] += calc_special_point(score, rank, rule_config=cfg)
             game_stats[name]["オカなし総合pt"] += calc_oka_nashi_point(score, rank)
             if rank > 0:
                 game_stats[name]["順位合計"] += rank

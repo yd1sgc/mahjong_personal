@@ -297,7 +297,38 @@ def autosave_draft():
         st.session_state["draft_save_error"] = str(e)
 
 
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+
+
+@dataclass
+class GameStateContainer:
+    active: bool = False
+    mode: str = "detail"
+    players: List[str] = field(default_factory=list)
+    scores: Dict[str, int] = field(default_factory=dict)
+    round_idx: int = 0
+    honba: int = 0
+    riichi_stick: int = 0
+    riichi_declared: List[str] = field(default_factory=list)
+    furo_declared: List[str] = field(default_factory=list)
+    round_history: List[Dict[str, Any]] = field(default_factory=list)
+    undo_stack: List[Dict[str, Any]] = field(default_factory=list)
+    input_mode: str = "normal"
+    group_id: str = "all"
+    rule_id: str = "m_league"
+    rule_config: Dict[str, Any] = field(default_factory=dict)
+
+
+def init_game_container():
+    """対局コンテナの安全な1回限り初期化 (イベント衝突なし)"""
+    if "game_container" not in st.session_state:
+        st.session_state.game_container = GameStateContainer()
+
+
 def reset_game():
+    """対局データの完全一括リセット"""
+    st.session_state.game_container = GameStateContainer()
     keys = [
         "game_active", "players", "scores", "round_idx", "honba",
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",
@@ -310,4 +341,5 @@ def reset_game():
             del st.session_state[k]
     st.session_state.view = "setup"
     db.delete_draft()
+
 
