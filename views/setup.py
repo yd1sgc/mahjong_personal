@@ -1,3 +1,4 @@
+import cache_utils
 import streamlit as st
 from datetime import datetime
 import database2 as db
@@ -45,8 +46,8 @@ def show_setup():
             st.rerun()
 
     # ── グループ＆ルール選択 ──────────────────────────────────
-    groups = db.get_groups()
-    all_rules = db.get_rule_templates()
+    groups = cache_utils.get_groups()
+    all_rules = cache_utils.get_rule_templates()
     
     def _rule_label(r):
         tag = "公式" if r.get("kind") == "official" else "カスタム"
@@ -125,7 +126,7 @@ def show_setup():
         st.divider()
 
         # ── メンバーボタン一覧 ───────────────────────────────────
-        all_members = db.get_all_members()
+        all_members = cache_utils.get_all_members()
         target_members_ids = chosen_group.get("members", [])
         mem_name_map = {m["member_id"]: m["member_name"] for m in all_members}
         target_members_names = [mem_name_map[mid] for mid in target_members_ids if mid in mem_name_map]
@@ -161,6 +162,7 @@ def show_setup():
             if st.button("メンバーを追加する",
                          disabled=(guest_name in selected)):
                 db.add_member(guest_name.strip())
+                st.cache_data.clear()
                 if len(selected) < 4 and guest_name.strip() not in selected:
                     selected.append(guest_name.strip())
                 st.rerun()

@@ -1,3 +1,4 @@
+import cache_utils
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -20,11 +21,11 @@ def show_game():
     
     grp_name = "全体"
     if grp_id != "all":
-        groups = db.get_groups()
+        groups = cache_utils.get_groups()
         grp_name = next((g["group_name"] for g in groups if g["group_id"] == grp_id), "グループ")
     
     rule_name = st.session_state.get("current_rule_id", "Mリーグルール")
-    rules = db.get_rule_templates()
+    rules = cache_utils.get_rule_templates()
     r_obj = next((r for r in rules if r["rule_id"] == rule_name), None)
     if r_obj:
         rule_name = r_obj["rule_name"]

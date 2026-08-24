@@ -1,3 +1,4 @@
+import cache_utils
 import uuid
 import streamlit as st
 import database2 as db
@@ -15,10 +16,10 @@ def show_group_manage():
     st.caption("グループ管理")
     st.divider()
 
-    groups = db.get_groups()
-    rules = db.get_rule_templates()
+    groups = cache_utils.get_groups()
+    rules = cache_utils.get_rule_templates()
     rule_map = {r["rule_id"]: r["rule_name"] for r in rules}
-    all_members = db.get_all_members()
+    all_members = cache_utils.get_all_members()
 
     if "editing_group_id" not in st.session_state:
         st.session_state.editing_group_id = None
@@ -50,6 +51,7 @@ def show_group_manage():
             if st.button("＋ メンバー追加", type="primary", use_container_width=True, key="tab1_add_mbtn"):
                 if new_mname and new_mname.strip():
                     new_id = db.add_member(new_mname.strip())
+                    st.cache_data.clear()
                     if new_id is not None:
                         st.success(f"メンバー「{new_mname.strip()}」をID登録しました")
                         st.rerun()
@@ -100,6 +102,7 @@ def show_group_manage():
                 else:
                     new_gid = f"group_{uuid.uuid4().hex[:8]}"
                     db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new)
+                    st.cache_data.clear()
                     st.session_state.selected_group_id = new_gid
                     st.session_state.active_rule_id = rule_sel_new
                     st.session_state.view = "setup"
@@ -111,6 +114,7 @@ def show_group_manage():
                 else:
                     new_gid = f"group_{uuid.uuid4().hex[:8]}"
                     db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new)
+                    st.cache_data.clear()
                     st.success(f"グループ「{gname_new}」を作成しました")
                     st.rerun()
 
@@ -171,9 +175,11 @@ def show_group_manage():
                     if st.button("＋ メンバー追加", type="primary", use_container_width=True, key="t2_edit_add_mbtn"):
                         if edit_new_mname and edit_new_mname.strip():
                             new_id = db.add_member(edit_new_mname.strip())
+                            st.cache_data.clear()
                             if new_id is not None:
                                 cur_mems.add(new_id)
                                 db.save_group(target_g["group_id"], target_g["group_name"], target_g.get("default_rule_id", "m_league"), list(cur_mems))
+                                st.cache_data.clear()
                                 st.rerun()
 
                 selected_mems_edit = []
@@ -212,6 +218,7 @@ def show_group_manage():
                             st.error("グループ名を入力してください")
                         else:
                             db.save_group(target_g["group_id"], gname_edit.strip(), rule_sel_edit, selected_mems_edit)
+                            st.cache_data.clear()
                             st.session_state.editing_group_id = None
                             st.session_state.selected_group_id = target_g["group_id"]
                             st.session_state.active_rule_id = rule_sel_edit
@@ -223,6 +230,7 @@ def show_group_manage():
                             st.error("グループ名を入力してください")
                         else:
                             db.save_group(target_g["group_id"], gname_edit.strip(), rule_sel_edit, selected_mems_edit)
+                            st.cache_data.clear()
                             st.session_state.editing_group_id = None
                             st.success("グループ情報を更新しました")
                             st.rerun()

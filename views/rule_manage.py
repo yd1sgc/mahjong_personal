@@ -1,3 +1,4 @@
+import cache_utils
 import uuid
 import streamlit as st
 import database2 as db
@@ -47,7 +48,7 @@ def show_rule_manage():
         st.success(st.session_state.rule_flash_message)
         del st.session_state.rule_flash_message
 
-    all_rules = db.get_rule_templates(include_archived=False)
+    all_rules = cache_utils.get_rule_templates(include_archived=False)
     official_presets = [r for r in all_rules if r["kind"] == "official"]
     custom_rules = [r for r in all_rules if r["kind"] == "custom"]
 
@@ -299,6 +300,7 @@ def show_rule_edit(custom_rules):
             else:
                 r_id = target_rule["rule_id"] if is_edit else f"rule_{uuid.uuid4().hex[:8]}"
                 db.save_custom_rule(r_id, rule_name_in.strip(), preview_config)
+                st.cache_data.clear()
                 st.session_state.rule_flash_message = f"ルール「[{next_rid_str}] {rule_name_in.strip()}」を保存しました"
                 st.session_state.editing_rule_id = None
                 st.session_state.rule_page_mode = "list"
@@ -313,6 +315,7 @@ def show_rule_edit(custom_rules):
                 with cd1:
                     if st.button("はい", type="primary", use_container_width=True, key="rf_del_yes"):
                         db.archive_rule(target_rule["rule_id"])
+                        st.cache_data.clear()
                         st.session_state.rule_flash_message = f"ルール「{target_rule['rule_name']}」を削除しました"
                         st.session_state.editing_rule_id = None
                         st.session_state.rule_page_mode = "list"
