@@ -11,7 +11,7 @@ def show_stats():
         st.title("成績")
     with c_t2:
         st.markdown("<div style='margin-top: 1.2rem;'>", unsafe_allow_html=True)
-        if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="top_to_home"):
+        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="top_to_home"):
             st.session_state.view = "home"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
@@ -35,11 +35,11 @@ def show_stats():
 
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        sel_grp_name = st.selectbox("👥 グループ", [g["group_name"] for g in grp_options], key="stats_grp_sel")
+        sel_grp_name = st.selectbox(" グループ", [g["group_name"] for g in grp_options], key="stats_grp_sel")
         chosen_grp = next((g for g in grp_options if g["group_name"] == sel_grp_name), grp_options[0])
     with col_f2:
         rule_disp_names = [_stats_rule_label(r) for r in rule_options]
-        sel_rule_disp = st.selectbox("⚙️ ルール", rule_disp_names, key="stats_rule_sel")
+        sel_rule_disp = st.selectbox(" ルール", rule_disp_names, key="stats_rule_sel")
         chosen_rule = next((r for r in rule_options if _stats_rule_label(r) == sel_rule_disp), rule_options[0])
 
     col_f3, col_f4 = st.columns(2)
@@ -51,7 +51,7 @@ def show_stats():
         selected_year = st.selectbox("集計期間", year_options, key="stats_year")
     with col_f4:
         st.markdown("<div style='margin-top: 1.6rem;'>", unsafe_allow_html=True)
-        include_guests = st.checkbox("☑ ゲストも表示する", value=(chosen_grp["group_id"] == "all"), key="stats_include_guests")
+        include_guests = st.checkbox(" ゲストも表示する", value=(chosen_grp["group_id"] == "all"), key="stats_include_guests")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
@@ -68,7 +68,7 @@ def show_stats():
 
     if df_games.empty:
         st.info("条件に一致する対局記録がありません。")
-        if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
+        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
             st.session_state.view = "home"
             st.rerun()
         return
@@ -338,6 +338,6 @@ def show_stats():
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
-    if st.button("🔐 ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home"):
+    if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home"):
         st.session_state.view = "home"
         st.rerun()

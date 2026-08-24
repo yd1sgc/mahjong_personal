@@ -7,7 +7,7 @@ from constants import MEMBERS, INIT_SCORE, HOUSE_RULES, generate_rule_descriptio
 
 
 def _show_rules_expander(rule_config=None):
-    with st.expander("📖 適用中の詳細ルール確認"):
+    with st.expander(" 適用中の詳細ルール確認"):
         rule_desc = generate_rule_description(rule_config) if rule_config else HOUSE_RULES
         for category, rules in rule_desc.items():
             st.markdown(f"**{category}**  \n" + "  \n".join(rules))
@@ -38,7 +38,7 @@ def show_setup():
 
     ch1, ch2 = st.columns([1, 3])
     with ch1:
-        if st.button("🏠 ホーム", use_container_width=True, key="setup_back_home"):
+        if st.button(" ホーム", use_container_width=True, key="setup_back_home"):
             st.session_state.view = "home"
             st.rerun()
     with ch2:
@@ -64,7 +64,7 @@ def show_setup():
 
     group_options = [
         {"group_id": "none", "group_name": "--- グループを選択してください ---", "group_name_disp": "--- グループを選択してください ---", "members": []},
-        {"group_id": "all", "group_name": "⚡ グループ指定なし（クイック対局）", "group_name_disp": "⚡ グループ指定なし（クイック対局）", "members": [], "default_rule_id": "rule_shinseki"}
+        {"group_id": "all", "group_name": " グループ指定なし（クイック対局）", "group_name_disp": " グループ指定なし（クイック対局）", "members": [], "default_rule_id": "rule_shinseki"}
     ] + formatted_groups
 
     # セッション状態の初期化
@@ -77,7 +77,7 @@ def show_setup():
     with col_g:
         grp_names = [g["group_name_disp"] for g in group_options]
         cur_g_idx = next((idx for idx, g in enumerate(group_options) if g["group_id"] == st.session_state.selected_group_id), 0)
-        sel_g_name_disp = st.selectbox("👥 グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
+        sel_g_name_disp = st.selectbox(" グループ選択", options=grp_names, index=cur_g_idx, key="setup_grp_select")
         
         chosen_group = next((g for g in group_options if g["group_name_disp"] == sel_g_name_disp), group_options[0])
         if chosen_group["group_id"] != st.session_state.selected_group_id:
@@ -90,7 +90,7 @@ def show_setup():
     with col_r:
         r_ids = [r["rule_id"] for r in all_rules]
         cur_r_idx = r_ids.index(st.session_state.active_rule_id) if st.session_state.active_rule_id in r_ids else 0
-        sel_r_id = st.selectbox("⚙️ 適用ルール", options=r_ids, index=cur_r_idx, format_func=lambda x: rule_map.get(x, x), key="setup_rule_select")
+        sel_r_id = st.selectbox(" 適用ルール", options=r_ids, index=cur_r_idx, format_func=lambda x: rule_map.get(x, x), key="setup_rule_select")
         if sel_r_id != st.session_state.active_rule_id:
             st.session_state.active_rule_id = sel_r_id
             st.rerun()
@@ -99,7 +99,7 @@ def show_setup():
     st.divider()
 
     if st.session_state.selected_group_id == "none":
-        st.info("👆 まずは上部で「対局するグループ」と「適用ルール」を選択してください。")
+        st.info(" まずは上部で「対局するグループ」と「適用ルール」を選択してください。")
         st.caption("グループとルールが決定するまで、メンバーは選択できません。")
         st.divider()
     else:
@@ -155,7 +155,7 @@ def show_setup():
                         selected.append(m)
                     st.rerun()
 
-        guest_name = st.text_input("➕ メンバーその場追加", placeholder="メンバー名を入力して追加",
+        guest_name = st.text_input(" メンバーその場追加", placeholder="メンバー名を入力して追加",
                                    key="guest_input")
         if guest_name:
             if st.button("メンバーを追加する",

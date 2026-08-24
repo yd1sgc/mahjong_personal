@@ -11,7 +11,7 @@ from views.group_manage import show_group_manage
 
 st.set_page_config(
     page_title="麻雀スコア",
-    page_icon="🀄",
+    page_icon="",
     layout="centered",
     initial_sidebar_state="collapsed",
 )

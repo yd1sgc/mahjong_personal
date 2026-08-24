@@ -8,7 +8,7 @@ def show_home():
     if draft and draft.get("game_active") and draft.get("game_mode") == "detail":
         draft_time = st.session_state.get("draft_time")
         time_str = draft_time.strftime("%m/%d %H:%M") if draft_time else "不明"
-        st.warning(f"⚠️ {time_str} の対局が中断されています。再開しますか？")
+        st.warning(f" {time_str} の対局が中断されています。再開しますか？")
         cr, cd = st.columns(2)
         with cr:
             if st.button("再開する", type="primary", use_container_width=True, key="home_draft_resume"):
@@ -25,19 +25,19 @@ def show_home():
                 st.rerun()
         st.divider()
 
-    st.title("🀄 麻雀スコア")
+    st.title(" 麻雀スコア")
     st.caption("ホーム画面")
     st.divider()
 
     # メインボタン: 対局を始める
-    if st.button("🀄 対局を始める", type="primary", use_container_width=True, key="home_start_game"):
+    if st.button(" 対局を始める", type="primary", use_container_width=True, key="home_start_game"):
         st.session_state.view = "setup"
         st.rerun()
 
     st.write("")
 
     # 成績を見る
-    if st.button("📊 成績を見る", use_container_width=True, key="home_view_stats"):
+    if st.button(" 成績を見る", use_container_width=True, key="home_view_stats"):
         st.session_state.view = "stats"
         st.rerun()
 
@@ -46,17 +46,17 @@ def show_home():
     # グループ管理 & ルール作成
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("👥 グループ管理", use_container_width=True, key="home_group_mgmt"):
+        if st.button(" グループ管理", use_container_width=True, key="home_group_mgmt"):
             st.session_state.view = "group_manage"
             st.rerun()
     with c2:
-        if st.button("⚙️ ルール作成", use_container_width=True, key="home_rule_mgmt"):
+        if st.button(" ルール作成", use_container_width=True, key="home_rule_mgmt"):
             st.session_state.view = "rule_manage"
             st.rerun()
 
     st.write("")
 
     # データ管理
-    if st.button("💾 データ管理", use_container_width=True, key="home_data_manage"):
+    if st.button(" データ管理", use_container_width=True, key="home_data_manage"):
         st.session_state.view = "data_manage"
         st.rerun()

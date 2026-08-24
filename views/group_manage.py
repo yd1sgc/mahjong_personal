@@ -6,11 +6,11 @@ import database2 as db
 def show_group_manage():
     c_h1, c_h2 = st.columns([1, 3])
     with c_h1:
-        if st.button("🏠 ホーム", use_container_width=True, key="grp_back_home"):
+        if st.button(" ホーム", use_container_width=True, key="grp_back_home"):
             st.session_state.view = "home"
             st.rerun()
     with c_h2:
-        st.markdown("### 👥 メンバー・グループ管理")
+        st.markdown("###  メンバー・グループ管理")
 
     st.caption("新規グループ作成または既存グループの編集をステップ順に行えます。")
     st.divider()
@@ -23,14 +23,14 @@ def show_group_manage():
     if "editing_group_id" not in st.session_state:
         st.session_state.editing_group_id = None
 
-    tab_new, tab_list = st.tabs(["➕ 新規グループ作成", "✏️ 登録済みグループの編集・選択"])
+    tab_new, tab_list = st.tabs([" 新規グループ作成", " 登録済みグループの編集・選択"])
 
     # ──────────────────────────────────────────────────────────
     # TAB 1: 新規グループ作成
     # ──────────────────────────────────────────────────────────
     with tab_new:
         next_gid_str = f"G{len(groups) + 1:02d}"
-        st.subheader(f"➕ 新規グループの作成 (割り当てID: {next_gid_str})")
+        st.subheader(f" 新規グループの作成 (割り当てID: {next_gid_str})")
         
         # ── Step 1: グループ名 ────────────────────────────────
         st.markdown(f"#### **Step 1: グループ名** [グループID: {next_gid_str}]")
@@ -84,7 +84,7 @@ def show_group_manage():
         with col_r2:
             st.write("")
             st.write("")
-            if st.button("⚙️ ルール作成へ", use_container_width=True, key="t1_to_rule"):
+            if st.button(" ルール作成へ", use_container_width=True, key="t1_to_rule"):
                 st.session_state.view = "rule_manage"
                 st.rerun()
 
@@ -94,7 +94,7 @@ def show_group_manage():
         st.markdown("#### **Step 4: 保存 ＆ 対戦へ**")
         cs1, cs2 = st.columns(2)
         with cs1:
-            if st.button("🀄 このグループで対局を開始する", type="primary", use_container_width=True, key="t1_save_play"):
+            if st.button(" このグループで対局を開始する", type="primary", use_container_width=True, key="t1_save_play"):
                 if not gname_new.strip():
                     st.error("グループ名を入力してください")
                 else:
@@ -105,7 +105,7 @@ def show_group_manage():
                     st.session_state.view = "setup"
                     st.rerun()
         with cs2:
-            if st.button("💾 保存のみ", use_container_width=True, key="t1_save_only"):
+            if st.button(" 保存のみ", use_container_width=True, key="t1_save_only"):
                 if not gname_new.strip():
                     st.error("グループ名を入力してください")
                 else:
@@ -118,10 +118,10 @@ def show_group_manage():
     # TAB 2: 登録済みグループの編集・選択
     # ──────────────────────────────────────────────────────────
     with tab_list:
-        st.subheader("📋 登録済みグループ一覧")
+        st.subheader(" 登録済みグループ一覧")
 
         if not groups:
-            st.info("登録されているグループはありません。「➕ 新規グループ作成」タブから作成してください。")
+            st.info("登録されているグループはありません。「 新規グループ作成」タブから作成してください。")
         else:
             for g in groups:
                 g_id = g["group_id"]
@@ -152,7 +152,7 @@ def show_group_manage():
             if target_g:
                 t_dispid = target_g.get("display_id", "G--")
                 st.markdown(f"---")
-                st.subheader(f"✏️ 「[{t_dispid}] {target_g['group_name']}」の編集")
+                st.subheader(f" 「[{t_dispid}] {target_g['group_name']}」の編集")
 
                 # Step 1: グループ名
                 st.markdown(f"#### **Step 1: グループ名** [グループID: {t_dispid}]")
@@ -197,7 +197,7 @@ def show_group_manage():
                 with col_er2:
                     st.write("")
                     st.write("")
-                    if st.button("⚙️ ルール作成へ", use_container_width=True, key="t2_to_rule"):
+                    if st.button(" ルール作成へ", use_container_width=True, key="t2_to_rule"):
                         st.session_state.view = "rule_manage"
                         st.rerun()
 
@@ -207,7 +207,7 @@ def show_group_manage():
                 st.markdown("#### **Step 4: 変更保存 ＆ 対戦へ**")
                 ce1, ce2, ce3 = st.columns([2, 2, 1])
                 with ce1:
-                    if st.button("🀄 変更保存して対局へ", type="primary", use_container_width=True, key="t2_save_play"):
+                    if st.button(" 変更保存して対局へ", type="primary", use_container_width=True, key="t2_save_play"):
                         if not gname_edit.strip():
                             st.error("グループ名を入力してください")
                         else:

@@ -35,7 +35,7 @@ def show_game():
     uma = b_cfg.get("uma", [50, 10, -10, -30])
     uma_str = f"{uma[0]:+}, {uma[1]:+}, {uma[2]:+}, {uma[3]:+}"
 
-    st.caption(f"👥 卓: **{grp_name}** | ⚙️ ルール: **{rule_name}** ({init_s:,}点持/{ret_s:,}点返 | ウマ:[{uma_str}])")
+    st.caption(f" 卓: **{grp_name}** |  ルール: **{rule_name}** ({init_s:,}点持/{ret_s:,}点返 | ウマ:[{uma_str}])")
 
     end_reason = game_logic.check_game_end()
 
@@ -44,7 +44,7 @@ def show_game():
         if st.button("終局・記録する", type="primary", use_container_width=True):
             st.session_state.input_mode = "endgame"
             st.rerun()
-        if st.button("↩ 元に戻す",
+        if st.button(" 元に戻す",
                      disabled=not st.session_state.undo_stack,
                      use_container_width=True):
             game_logic.undo_last()
@@ -88,7 +88,7 @@ def show_game():
 
         tags = []
         if p == dealer:
-            tags.append("★")
+            tags.append("")
         if is_riichi:
             tags.append("立")
         tag_str = " ".join(tags)
@@ -110,7 +110,7 @@ def show_game():
                 st.rerun()
 
         with col_f:
-            label_f = "副\n✓" if is_furo else "副\n　"
+            label_f = "副\n" if is_furo else "副\n　"
             if st.button(label_f, key=f"f_{p}",
                          type="primary" if is_furo else "secondary",
                          disabled=is_riichi,
@@ -123,7 +123,7 @@ def show_game():
 
         with col_r:
             if is_riichi:
-                st.button("立\n✓", key=f"r_{p}", type="primary",
+                st.button("立\n", key=f"r_{p}", type="primary",
                           use_container_width=True)
             else:
                 can_riichi = not is_furo
@@ -145,7 +145,7 @@ def show_game():
             st.session_state.tenpai_selection = list(riichi_declared)
             st.rerun()
 
-    if st.button("↩ 元に戻す",
+    if st.button(" 元に戻す",
                  disabled=not st.session_state.undo_stack,
                  use_container_width=True):
         game_logic.undo_last()
@@ -190,7 +190,7 @@ def show_win_input():
     if step == 0:
         st.title("誰が和了？")
         for p in players:
-            mark = "  ★" if p == game_logic.get_dealer() else ""
+            mark = "  " if p == game_logic.get_dealer() else ""
             if st.button(f"{p}{mark}", key=f"w_{p}",
                          type="primary", use_container_width=True):
                 data["winner"] = p
@@ -327,7 +327,7 @@ def show_win_input():
         already_won = [wd["winner"] for wd in data["winners_data"]]
         for p in players:
             if p != loser and p not in already_won:
-                mark = "  ★" if p == game_logic.get_dealer() else ""
+                mark = "  " if p == game_logic.get_dealer() else ""
                 if st.button(f"{p}{mark}", key=f"m_w_{p}", type="primary", use_container_width=True):
                     data["current_winner"] = p
                     data["current_is_dealer"] = (p == game_logic.get_dealer())
@@ -444,7 +444,7 @@ def show_chombo_input():
     st.subheader("チョンボしたプレイヤーを選択")
     for p in players:
         if p == dealer:
-            label = f"★ {p}（親）　→ 子3人に各4,000点"
+            label = f" {p}（親）　→ 子3人に各4,000点"
         else:
             label = f"{p}　→ 親に4,000点・子2人に各2,000点"
         if st.button(label, key=f"chombo_{p}", use_container_width=True):
