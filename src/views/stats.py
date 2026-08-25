@@ -15,7 +15,9 @@ def show_stats():
         st.title("成績")
     with c_t2:
         st.markdown("<div style='margin-top: 1.2rem;'>", unsafe_allow_html=True)
-        st.button(" ホーム画面へ", type="primary", use_container_width=True, key="top_to_home", on_click=_set_view, args=("home",))
+        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="top_to_home"):
+            st.session_state.view = "home"
+            st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     df_all = cache_utils.get_games_data()
@@ -70,7 +72,9 @@ def show_stats():
 
     if df_games.empty:
         st.info("条件に一致する対局記録がありません。")
-        st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home", on_click=_set_view, args=("home",))
+        if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
+            st.session_state.view = "home"
+            st.rerun()
         return
 
     all_names = pd.unique(df_games[['p1_name', 'p2_name', 'p3_name', 'p4_name']].values.ravel('K'))
@@ -336,10 +340,16 @@ def show_stats():
     st.divider()
     st.subheader("選択試合の合計集計")
     all_game_ids = df_games.sort_values("game_id", ascending=False)["game_id"].tolist()
+    def _format_game_id(gid):
+        rows = df_history[df_history['#'] == int(gid)]
+        if rows.empty:
+            return f"#{int(gid)}  データ不明"
+        return f"#{int(gid)}  {rows['日付'].values[0]}  {rows['1位'].values[0]}"
+
     selected_ids = st.multiselect(
         "集計するゲームIDを選択",
         options=all_game_ids,
-        format_func=lambda gid: f"#{int(gid)}  {df_history[df_history['#']==int(gid)]['日付'].values[0]}  {df_history[df_history['#']==int(gid)]['1位'].values[0]}",
+        format_func=_format_game_id,
         key="agg_game_ids",
     )
     if selected_ids:
@@ -355,4 +365,6 @@ def show_stats():
         st.caption(f"{len(selected_ids)}試合の合計")
         st.dataframe(df_agg, use_container_width=True, hide_index=True)
 
-    st.button(" ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home", on_click=_set_view, args=("home",))
+    if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="bottom_to_home"):
+        st.session_state.view = "home"
+        st.rerun()
