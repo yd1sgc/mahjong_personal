@@ -187,11 +187,18 @@ def recalculate_state():
             if ryukyoku_type != "other" and active_cfg.get("detail", {}).get(ryukyoku_type) == "ryukyoku":
                 dealer_continues = False
 
-        if dealer_continues:
+        if win_type == "chombo":
+            pass # チョンボは局も本場も進まない
+        elif win_type in ("ryukyoku", "mid_ryukyoku"):
             honba += 1
+            if not dealer_continues:
+                current_round_idx += 1
         else:
-            current_round_idx += 1
-            honba = 0
+            if dealer_continues:
+                honba += 1
+            else:
+                current_round_idx += 1
+                honba = 0
 
     # 進行中の局のリーチ宣言を反映
     for p in st.session_state.get("riichi_declared", []):

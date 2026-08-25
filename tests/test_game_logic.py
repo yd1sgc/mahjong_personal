@@ -34,7 +34,7 @@ class TestGameLogic:
             "win_type": "ryukyoku",
             "tenpai": ["P1", "P2"]
         })
-        game_logic.recalculate_from_history()
+        game_logic.recalculate_state()
         # テンパイ2人、ノーテン2人。1人1500点移動
         assert st.session_state.scores["P1"] == 26500
         assert st.session_state.scores["P3"] == 23500
@@ -48,7 +48,7 @@ class TestGameLogic:
             "win_type": "ryukyoku",
             "tenpai": ["P1"] # 1人テンパイ
         })
-        game_logic.recalculate_from_history()
+        game_logic.recalculate_state()
         # テンパイ1人に4000、他3人が-1333 (4000 // 3 = 1333)
         assert st.session_state.scores["P1"] == 29000
         assert st.session_state.scores["P2"] == 23667
@@ -60,7 +60,7 @@ class TestGameLogic:
             "win_type": "chombo",
             "winner": "P2" # 子のチョンボ
         })
-        game_logic.recalculate_from_history()
+        game_logic.recalculate_state()
         # 子が親(P1)に4000、子(P3,P4)に2000
         assert st.session_state.scores["P2"] == 17000
         assert st.session_state.scores["P1"] == 29000
@@ -74,7 +74,7 @@ class TestGameLogic:
             "win_type": "chombo",
             "winner": "P1" # 親のチョンボ
         })
-        game_logic.recalculate_from_history()
+        game_logic.recalculate_state()
         # 親が子全員に 12000 // 2 = 6000 支払い (合計 18000)
         assert st.session_state.scores["P1"] == 7000
         assert st.session_state.scores["P2"] == 31000
@@ -141,7 +141,14 @@ class TestGameLogic:
 
     def test_apply_multi_win_dubron_kyotaku(self):
         self.setup_method()
-        st.session_state.riichi_stick = 1 # 供託1000
+        st.session_state.round_history.append({
+            "kyoku_name": "東1局",
+            "win_type": "ryukyoku",
+            "tenpai": ["P1", "P2", "P3", "P4"],
+            "riichi_players": ["P1"] # P1がリーチして流局した（供託1本持ち越し）
+        })
+        game_logic.recalculate_state()
+        
         # P3が放銃、P1(親)とP2がダブロン
         wins_data = [
             {"winner": "P1", "points_data": {"total": 5800}},
@@ -150,12 +157,13 @@ class TestGameLogic:
         game_logic.apply_multi_win(wins_data, loser="P3")
         # 上家取り: 放銃者P3から見て、順番は P4 -> P1 -> P2。このうち和了者はP1とP2なので、P1が一番近い(上家)。
         # P1に供託が入るはず。
-        assert st.session_state.scores["P3"] == 25000 - 5800 - 3900
-        assert st.session_state.scores["P1"] == 25000 + 5800 + 1000 # 供託含む
-        assert st.session_state.scores["P2"] == 25000 + 3900
+        # 1本場なので、各和了点に+300点が加算される
+        assert st.session_state.scores["P3"] == 25000 - 5800 - 300 - 3900 - 300
+        assert st.session_state.scores["P1"] == 25000 + 5800 + 300 + 1000 - 1000 # 供託含む。直前リーチで-1000
+        assert st.session_state.scores["P2"] == 25000 + 3900 + 300
         # 親(P1)が和了したので連荘するはず
         assert st.session_state.round_idx == 0
-        assert st.session_state.honba == 1
+        assert st.session_state.honba == 2 # 1本場からさらに連荘で2本場へ
 
     def test_renchan_rule(self):
         self.setup_method()
