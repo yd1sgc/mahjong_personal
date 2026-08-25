@@ -62,10 +62,8 @@ def show_rule_manage():
 
 def show_rule_list(official_presets, custom_rules):
     # ── 1. 公式システムテンプレート (編集不可 / 複製可) ───────
-    st.subheader(" 公式システムテンプレート (編集不可・複製作成のみ可)")
-    st.caption("有名団体や標準ルールの固定定義です。「複製作成」ボタンを押すと下のフォームに内容が読み込まれます。")
-
-    for p in official_presets:
+    st.subheader(" 公式テンプレート")
+        for p in official_presets:
         p_id = p["rule_id"]
         disp_id = p.get("display_id", "PRESET")
         p_name = p["rule_name"]
@@ -102,7 +100,7 @@ def show_rule_list(official_presets, custom_rules):
     st.write("")
 
     if not custom_rules:
-        st.info("カスタムルールは登録されていません。上のボタンから新規作成してください。")
+        st.info("カスタムルールなし")
     else:
         for r in custom_rules:
             r_id = r["rule_id"]
@@ -148,7 +146,7 @@ def show_rule_edit(custom_rules):
 
     is_edit = target_rule is not None
     next_rid_str = target_rule.get("display_id", f"R{len(custom_rules) + 1:02d}") if is_edit else f"R{len(custom_rules) + 1:02d}"
-    form_title = f" ルール編集: [{next_rid_str}] {target_rule['rule_name']}" if is_edit else f" 新規ルール作成 (割り当てID: {next_rid_str})"
+    form_title = f"ルール編集 (ID: {next_rid_str})" if is_edit else f"新規作成 (ID: {next_rid_str})"
     st.subheader(form_title)
 
     # 初期値のセット
@@ -169,7 +167,7 @@ def show_rule_edit(custom_rules):
     rule_name_in = st.text_input("ルール名称", value=default_name, placeholder="例: Mリーグルール、金曜アリアリなど", key="rf_name")
 
     # アコーディオン 1:  基本設定
-    with st.expander("▼ 【アコーディオン 1】  基本設定 (持ち点・返し点・ウマ・端数処理)", expanded=True):
+    with st.expander("基本設定", expanded=True):
         col_s1, col_s2 = st.columns(2)
         with col_s1:
             init_score_in = st.number_input("持ち点 (配給原点)", value=int(b_init.get("init_score", 25000)), step=1000, key="rf_init")
@@ -195,7 +193,7 @@ def show_rule_edit(custom_rules):
             rounding_in = st.selectbox("端数処理方式", options=["五捨六入", "四捨五入", "切捨て", "切上げ", "小数点第一位維持"], index=0, key="rf_round")
 
     # アコーディオン 2:  アリアリ・ドラ設定
-    with st.expander("▼ 【アコーディオン 2】  アリアリ・ドラ設定 (喰いタン・後付け・赤牌・喰い替え)", expanded=False):
+    with st.expander("アリアリ・ドラ設定", expanded=False):
         cd1, cd2, cd3 = st.columns(3)
         with cd1:
             kuitan_in = st.checkbox("喰いタンあり", value=bool(d_init.get("kuitan", True)), key="rf_kuitan")
@@ -206,7 +204,7 @@ def show_rule_edit(custom_rules):
             kuikae_in = st.selectbox("喰い替え", options=["不可 (禁止)", "可"], index=0 if d_init.get("kuikae", "forbidden") == "forbidden" else 1, key="rf_kuikae")
 
     # アコーディオン 3:  進行・流局・終局条件
-    with st.expander("▼ 【アコーディオン 3】  進行・流局・終局条件 (トビ・西入・途中流局・連荘)", expanded=False):
+    with st.expander("進行・流局・終局条件", expanded=False):
         cg1, cg2, cg3 = st.columns(3)
         with cg1:
             tobi_in = st.selectbox("トビ (ハコ) 終了", options=["0点未満で終了", "0点以下で終了", "トビなし (継続)"], index=0 if d_init.get("tobi_end") == "under_zero" else (1 if d_init.get("tobi_end") == "zero_or_less" else 2), key="rf_tobi_end")
@@ -226,7 +224,7 @@ def show_rule_edit(custom_rules):
 
 
     # アコーディオン 4:  ダブロン・役満・チョンボ
-    with st.expander("▼ 【アコーディオン 4】  ダブロン・役満・チョンボ (ダブロン・パオ・チョンボ)", expanded=False):
+    with st.expander("ダブロン・役満・チョンボ", expanded=False):
         ct1, ct2 = st.columns(2)
         with ct1:
             dubron_in = st.selectbox("ダブロン・トリロン", options=["なし (頭ハネ/上家取り)", "あり (供託は頭ハネ)", "あり (供託全分配)"], index=0 if d_init.get("dubron") == "atama_hane" else (1 if d_init.get("dubron") == "atama_hane_kyotaku" else 2), key="rf_dubron")
@@ -242,7 +240,7 @@ def show_rule_edit(custom_rules):
             kokushi_ankan_in = st.checkbox("国士無双の暗カンアガリあり", value=bool(d_init.get("kokushi_ankan_win", True)), key="rf_kokushi")
 
     # アコーディオン 5:  ハウスルールメモ
-    with st.expander("▼ 【アコーディオン 5】  ハウスルール補足メモ", expanded=False):
+    with st.expander("ハウスルール補足メモ", expanded=False):
         house_notes_in = st.text_area("ハウスルール補足メモ", value=d_init.get("house_notes", ""), placeholder="例: 農作業優先ルール、独自のローカル決め事など", key="rf_notes")
 
     # リアルタイムプレビューオブジェクト作成
@@ -279,8 +277,7 @@ def show_rule_edit(custom_rules):
     }
 
     st.write("")
-    with st.expander(" ルール確認文章 リアルタイムプレビュー", expanded=True):
-        st.caption("※対局画面等で表示される自動組み立て文章のプレビューです。")
+    with st.expander("プレビュー", expanded=True):
         preview_desc = generate_rule_description(preview_config)
         for cat, lines in preview_desc.items():
             st.markdown(f"**{cat}**  \n" + "  \n".join(lines))
