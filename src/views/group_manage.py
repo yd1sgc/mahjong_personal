@@ -33,22 +33,14 @@ def show_group_manage():
     # ──────────────────────────────────────────────────────────
     with tab_new:
         next_gid_str = f"G{len(groups) + 1:02d}"
-        st.subheader(f" 新規グループの作成 (割り当てID: {next_gid_str})")
-        
-        # ── Step 1: グループ名 ────────────────────────────────
-        st.markdown(f"#### **Step 1: グループ名** [グループID: {next_gid_str}]")
-        gname_new = st.text_input("グループ名", placeholder="例: 金曜麻雀部、会社仲間など", key="t1_gname")
+        gname_new = st.text_input(f"グループ名 (ID: {next_gid_str})", key="t1_gname")
 
         st.divider()
-
-        # ── Step 2: メンバーの追加・選定 ────────────────────
-        st.markdown("#### **Step 2: メンバーの追加・選択**")
-        st.caption("新しく一緒に入るメンバーを追加するか、登録済みメンバーから選択してください。")
 
         # 新規メンバーその場登録
         c_m1, c_m2 = st.columns([3, 1])
         with c_m1:
-            new_mname = st.text_input("新規メンバー登録", placeholder="名前を入力して追加（例: 山田）", label_visibility="collapsed", key="tab1_new_mname")
+            new_mname = st.text_input("新規メンバー登録", placeholder="新規メンバー名", label_visibility="collapsed", key="tab1_new_mname")
         with c_m2:
             if st.button("＋ メンバー追加", type="primary", use_container_width=True, key="tab1_add_mbtn"):
                 if new_mname and new_mname.strip():
@@ -62,7 +54,6 @@ def show_group_manage():
                 else:
                     st.warning("名前を入力してください")
 
-        st.write("**グループに所属させるメンバーを選択:**")
         selected_members_new = []
         m_cols1 = st.columns(2)
         for i, m in enumerate(all_members):
@@ -73,8 +64,7 @@ def show_group_manage():
 
         st.divider()
 
-        # ── Step 3: ルール設定 ─────────────────────────────
-        st.markdown("#### **Step 3: ルール設定**")
+        
         col_r1, col_r2 = st.columns([3, 1])
         with col_r1:
             rule_options = [r["rule_id"] for r in rules]
@@ -92,8 +82,7 @@ def show_group_manage():
 
         st.divider()
 
-        # ── Step 4: 保存・対戦へ ─────────────────────────────
-        st.markdown("#### **Step 4: 保存 ＆ 対戦へ**")
+        
         cs1, cs2 = st.columns(2)
         with cs1:
             if st.button(" このグループで対局を開始する", type="primary", use_container_width=True, key="t1_save_play"):
@@ -156,16 +145,9 @@ def show_group_manage():
             if target_g:
                 t_dispid = target_g.get("display_id", "G--")
                 st.markdown(f"---")
-                st.subheader(f" 「[{t_dispid}] {target_g['group_name']}」の編集")
-
-                # Step 1: グループ名
-                st.markdown(f"#### **Step 1: グループ名** [グループID: {t_dispid}]")
-                gname_edit = st.text_input("グループ名", value=target_g["group_name"], key="t2_gname_edit")
+                gname_edit = st.text_input(f"グループ名 (ID: {t_dispid})", value=target_g["group_name"], key="t2_gname_edit")
                 
                 st.divider()
-
-                # Step 2: メンバーの追加・入れ替え
-                st.markdown("#### **Step 2: メンバーの追加・入れ替え**")
                 cur_mems = set(target_g["members"])
                 
                 c_em1, c_em2 = st.columns([3, 1])
@@ -192,8 +174,7 @@ def show_group_manage():
 
                 st.divider()
 
-                # Step 3: ルール変更
-                st.markdown("#### **Step 3: ルール設定**")
+                
                 col_er1, col_er2 = st.columns([3, 1])
                 with col_er1:
                     rule_options = [r["rule_id"] for r in rules]
@@ -207,8 +188,7 @@ def show_group_manage():
 
                 st.divider()
 
-                # Step 4: 変更保存 ＆ 対戦へ
-                st.markdown("#### **Step 4: 変更保存 ＆ 対戦へ**")
+                
                 ce1, ce2, ce3 = st.columns([2, 2, 1])
                 with ce1:
                     if st.button(" 変更保存して対局へ", type="primary", use_container_width=True, key="t2_save_play"):
