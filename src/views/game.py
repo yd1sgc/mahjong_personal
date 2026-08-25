@@ -15,29 +15,6 @@ def _show_rules_expander():
 
 
 def show_game():
-    # 適用グループ・ルール情報のキャプション表示
-    grp_id = st.session_state.get("current_group_id", "all")
-    r_cfg = st.session_state.get("current_rule_config", {})
-    
-    grp_name = "全体"
-    if grp_id != "all":
-        groups = cache_utils.get_groups()
-        grp_name = next((g["group_name"] for g in groups if g["group_id"] == grp_id), "グループ")
-    
-    rule_name = st.session_state.get("current_rule_id", "Mリーグルール")
-    rules = cache_utils.get_rule_templates()
-    r_obj = next((r for r in rules if r["rule_id"] == rule_name), None)
-    if r_obj:
-        rule_name = r_obj["rule_name"]
-
-    b_cfg = r_cfg.get("basic", r_cfg)
-    init_s = b_cfg.get("init_score", 25000)
-    ret_s = b_cfg.get("return_score", 30000)
-    uma = b_cfg.get("uma", [50, 10, -10, -30])
-    uma_str = f"{uma[0]:+}, {uma[1]:+}, {uma[2]:+}, {uma[3]:+}"
-
-    st.caption(f" 卓: **{grp_name}** |  ルール: **{rule_name}** ({init_s:,}点持/{ret_s:,}点返 | ウマ:[{uma_str}])")
-
     end_reason = game_logic.check_game_end()
 
     if end_reason:
