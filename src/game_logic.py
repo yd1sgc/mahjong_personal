@@ -14,10 +14,6 @@ def get_dealer():
 
 def save_snapshot():
     snap = {
-        "scores": dict(st.session_state.scores),
-        "round_idx": st.session_state.round_idx,
-        "honba": st.session_state.honba,
-        "riichi_stick": st.session_state.riichi_stick,
         "riichi_declared": list(st.session_state.riichi_declared),
         "furo_declared": list(st.session_state.furo_declared),
         "round_history": list(st.session_state.round_history),
@@ -31,15 +27,11 @@ def undo_last():
     if not st.session_state.undo_stack:
         return False
     snap = st.session_state.undo_stack.pop()
-    st.session_state.scores = snap["scores"]
-    st.session_state.round_idx = snap["round_idx"]
-    st.session_state.honba = snap["honba"]
-    st.session_state.riichi_stick = snap["riichi_stick"]
-    st.session_state.riichi_declared = snap["riichi_declared"]
-    st.session_state.furo_declared = snap["furo_declared"]
-    st.session_state.round_history = snap["round_history"]
+    st.session_state.riichi_declared = snap.get("riichi_declared", [])
+    st.session_state.furo_declared = snap.get("furo_declared", [])
+    st.session_state.round_history = snap.get("round_history", [])
     st.session_state.diff_target = None
-    autosave_draft()
+    recalculate_state()
     return True
 
 
@@ -55,7 +47,7 @@ def _parse_kyoku_idx(kyoku_name):
     return w * 4 + num
 
 
-def recalculate_from_history():
+def recalculate_state():
     players = st.session_state.players
     if not players:
         return
@@ -201,6 +193,12 @@ def recalculate_from_history():
             current_round_idx += 1
             honba = 0
 
+    # 進行中の局のリーチ宣言を反映
+    for p in st.session_state.get("riichi_declared", []):
+        if p in scores:
+            scores[p] -= 1000
+            riichi_stick += 1
+
     st.session_state.scores = scores
     st.session_state.riichi_stick = riichi_stick
     st.session_state.honba = honba
@@ -224,58 +222,21 @@ def record_round(winner, loser, win_type, score, tenpai=None):
 
 def declare_riichi(player):
     save_snapshot()
-    st.session_state.scores[player] -= 1000
-    st.session_state.riichi_stick += 1
     if player not in st.session_state.riichi_declared:
         st.session_state.riichi_declared.append(player)
-    autosave_draft()
+    recalculate_state()
 
 
-def end_round(dealer_continues):
-    if dealer_continues:
-        st.session_state.honba += 1
-    else:
-        st.session_state.round_idx += 1
-        st.session_state.honba = 0
-    st.session_state.riichi_declared = []
-    st.session_state.furo_declared = []
-    st.session_state.input_mode = "normal"
+
 
 
 def apply_win(winner, win_type, points_data, loser=None):
     save_snapshot()
-    scores = st.session_state.scores
-    players = st.session_state.players
-    honba = st.session_state.honba
-    is_dealer = (winner == get_dealer())
-
-    if win_type == "ron":
-        total = points_data["total"] + honba * 300
-        scores[loser] -= total
-        scores[winner] += total + st.session_state.riichi_stick * 1000
-    else:
-        if is_dealer:
-            each = points_data["each_pays"] + honba * 100
-            for p in players:
-                if p != winner:
-                    scores[p] -= each
-                    scores[winner] += each
-        else:
-            ko_pay = points_data["ko_pays"] + honba * 100
-            oya_pay = points_data["oya_pays"] + honba * 100
-            dealer = get_dealer()
-            for p in players:
-                if p == winner:
-                    continue
-                pay = oya_pay if p == dealer else ko_pay
-                scores[p] -= pay
-                scores[winner] += pay
-        scores[winner] += st.session_state.riichi_stick * 1000
-
     record_round(winner, loser, win_type, points_data.get("total", 0))
-    st.session_state.riichi_stick = 0
-    end_round(dealer_continues=is_dealer)
-    autosave_draft()
+    st.session_state.riichi_declared = []
+    st.session_state.furo_declared = []
+    st.session_state.input_mode = "normal"
+    recalculate_state()
 
 
 def check_game_end():
@@ -340,52 +301,15 @@ def check_game_end():
 
 def apply_ryukyoku(tenpai_players):
     save_snapshot()
-    scores = st.session_state.scores
-    players = st.session_state.players
-    noten = [p for p in players if p not in tenpai_players]
-    n_t, n_n = len(tenpai_players), len(noten)
-
-    if 0 < n_t < 4:
-        bappu = st.session_state.get("current_rule_config", {}).get("detail", {}).get("noten_bappu_pt", 3000)
-        each_noten_pay = bappu // n_n
-        each_tenpai_get = bappu // n_t
-        for p in noten:
-            scores[p] -= each_noten_pay
-        for p in tenpai_players:
-            scores[p] += each_tenpai_get
-
     record_round(None, None, "ryukyoku", 0, tenpai=tenpai_players)
-    
-    renchan_rule = st.session_state.get("current_rule_config", {}).get("detail", {}).get("renchan_rule", "tenpai")
-    dealer = get_dealer()
-    dealer_continues = False
-    
-    if renchan_rule == "tenpai":
-        dealer_continues = (dealer in tenpai_players)
-    elif renchan_rule == "agari":
-        dealer_continues = False
-    elif renchan_rule == "noten":
-        dealer_continues = True
-        
-    st.session_state.honba += 1
-    if not dealer_continues:
-        st.session_state.round_idx += 1
-        
     st.session_state.riichi_declared = []
     st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
-    autosave_draft()
+    recalculate_state()
 
 
 def apply_mid_ryukyoku(ryukyoku_type, tenpai_players=None):
     save_snapshot()
-    detail = st.session_state.get("current_rule_config", {}).get("detail", {})
-    dealer = get_dealer()
-    
-    dealer_continues = True
-    if ryukyoku_type != "other" and detail.get(ryukyoku_type) == "ryukyoku":
-        dealer_continues = False
-        
     st.session_state.round_history.append({
         "kyoku_name": get_round_name(),
         "winner": "",
@@ -398,41 +322,21 @@ def apply_mid_ryukyoku(ryukyoku_type, tenpai_players=None):
         "tenpai": tenpai_players or [],
     })
     
-    st.session_state.honba += 1
-    if not dealer_continues:
-        st.session_state.round_idx += 1
-        
     st.session_state.riichi_declared = []
     st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
-    autosave_draft()
+    recalculate_state()
 
 
 def apply_multi_win(wins_data, loser):
     save_snapshot()
-    scores = st.session_state.scores
     players = st.session_state.players
-    honba = st.session_state.honba
-    dealer = get_dealer()
-    
     loser_idx = players.index(loser) if loser in players else 0
     def distance(p):
         idx = players.index(p) if p in players else 0
         return (idx - loser_idx) % 4
         
     closest_winner = min([wd["winner"] for wd in wins_data], key=distance) if wins_data else ""
-    is_dealer_won = False
-    
-    for wd in wins_data:
-        w = wd["winner"]
-        total = wd["points_data"]["total"] + honba * 300
-        scores[loser] -= total
-        scores[w] += total
-        if w == dealer:
-            is_dealer_won = True
-            
-    if closest_winner in scores:
-        scores[closest_winner] += st.session_state.riichi_stick * 1000
         
     st.session_state.round_history.append({
         "kyoku_name": get_round_name(),
@@ -446,44 +350,20 @@ def apply_multi_win(wins_data, loser):
         "tenpai": [],
     })
     
-    st.session_state.riichi_stick = 0
-    end_round(dealer_continues=is_dealer_won)
-    autosave_draft()
+    st.session_state.riichi_declared = []
+    st.session_state.furo_declared = []
+    st.session_state.input_mode = "normal"
+    recalculate_state()
 
 
 
 def apply_chombo(player):
     save_snapshot()
-    players = st.session_state.players
-    scores = st.session_state.scores
-    dealer = get_dealer()
-
-    detail_cfg = st.session_state.get("current_rule_config", {}).get("detail", {})
-    chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
-
-    if chombo_rule == "mangan_pay":
-        m_base = detail_cfg.get("mangan_base_pt", 8000)
-        oya_pay = m_base // 2
-        ko_pay = m_base // 4
-        if player == dealer:
-            for p in players:
-                if p != player:
-                    scores[player] -= oya_pay
-                    scores[p] += oya_pay
-        else:
-            for p in players:
-                if p == player:
-                    continue
-                elif p == dealer:
-                    scores[player] -= oya_pay
-                    scores[p] += oya_pay
-                else:
-                    scores[player] -= ko_pay
-                    scores[p] += ko_pay
-
     record_round(player, None, "chombo", 0)
+    st.session_state.riichi_declared = []
+    st.session_state.furo_declared = []
     st.session_state.input_mode = "normal"
-    autosave_draft()
+    recalculate_state()
 
 
 def autosave_draft():

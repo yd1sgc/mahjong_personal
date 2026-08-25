@@ -90,7 +90,7 @@ def show_group_manage():
                     st.error("グループ名を入力してください")
                 else:
                     new_gid = f"group_{uuid.uuid4().hex[:8]}"
-                    db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new)
+                    db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new, display_id=next_gid_str)
                     st.cache_data.clear()
                     st.session_state.selected_group_id = new_gid
                     st.session_state.active_rule_id = rule_sel_new
@@ -102,7 +102,7 @@ def show_group_manage():
                     st.error("グループ名を入力してください")
                 else:
                     new_gid = f"group_{uuid.uuid4().hex[:8]}"
-                    db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new)
+                    db.save_group(new_gid, gname_new.strip(), rule_sel_new, selected_members_new, display_id=next_gid_str)
                     st.cache_data.clear()
                     st.success(f"グループ「{gname_new}」を作成しました")
                     st.rerun()

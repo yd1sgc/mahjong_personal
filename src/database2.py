@@ -88,10 +88,13 @@ def migrate_local_identity_schema(conn):
 
     c.execute('''CREATE TABLE IF NOT EXISTS groups (
         group_id TEXT PRIMARY KEY,
+        display_id TEXT,
         group_name TEXT NOT NULL,
         default_rule_id TEXT,
         is_archived INTEGER NOT NULL DEFAULT 0
     )''')
+    _add_column_if_missing(c, "groups", "display_id", "TEXT")
+    
     if _table_exists(c, "member_groups"):
         c.execute('''INSERT OR IGNORE INTO groups
             (group_id, group_name, default_rule_id, is_archived)
@@ -136,21 +139,23 @@ def migrate_local_identity_schema(conn):
     )''')
 
     if _table_exists(c, "games"):
-        for seat in range(1, 5):
-            rows = c.execute(
-                f"""SELECT game_id, p{seat}_name, p{seat}_score, p{seat}_rank
-                    FROM games WHERE p{seat}_name IS NOT NULL AND TRIM(p{seat}_name) != ''"""
-            ).fetchall()
-            for game_id, name, score, rank in rows:
-                member = c.execute(
-                    "SELECT member_id FROM members WHERE member_name=? ORDER BY member_id LIMIT 1",
-                    (name,)
-                ).fetchone()
-                c.execute('''INSERT OR IGNORE INTO game_participants
-                    (game_id, seat, member_id, display_name_snapshot, score, rank, was_group_member)
-                    VALUES (?, ?, ?, ?, ?, ?, NULL)''',
-                    (game_id, seat, member[0] if member else None, name, score, rank)
-                )
+        columns = {row[1] for row in c.execute("PRAGMA table_info(games)")}
+        if "p1_name" in columns:
+            for seat in range(1, 5):
+                rows = c.execute(
+                    f"""SELECT game_id, p{seat}_name, p{seat}_score, p{seat}_rank
+                        FROM games WHERE p{seat}_name IS NOT NULL AND TRIM(p{seat}_name) != ''"""
+                ).fetchall()
+                for game_id, name, score, rank in rows:
+                    member = c.execute(
+                        "SELECT member_id FROM members WHERE member_name=? ORDER BY member_id LIMIT 1",
+                        (name,)
+                    ).fetchone()
+                    c.execute('''INSERT OR IGNORE INTO game_participants
+                        (game_id, seat, member_id, display_name_snapshot, score, rank, was_group_member)
+                        VALUES (?, ?, ?, ?, ?, ?, NULL)''',
+                        (game_id, seat, member[0] if member else None, name, score, rank)
+                    )
 
     c.execute('''CREATE TABLE IF NOT EXISTS rule_templates (
         rule_id TEXT PRIMARY KEY,
@@ -280,10 +285,6 @@ def init_local_db():
         c.execute('''CREATE TABLE IF NOT EXISTS games (
             game_id INTEGER PRIMARY KEY,
             date TEXT,
-            p1_name TEXT, p1_score INTEGER, p1_rank INTEGER,
-            p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
-            p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
-            p4_name TEXT, p4_score INTEGER, p4_rank INTEGER,
             is_synced INTEGER DEFAULT 0,
             group_id TEXT DEFAULT 'all',
             rule_id TEXT DEFAULT 'm_league',
@@ -391,9 +392,7 @@ def sync_to_supabase():
     try:
         lc = local_conn.cursor()
         lc.execute("""
-            SELECT game_id, date, p1_name, p1_score, p1_rank,
-                   p2_name, p2_score, p2_rank, p3_name, p3_score, p3_rank,
-                   p4_name, p4_score, p4_rank, group_id, rule_id,
+            SELECT game_id, date, group_id, rule_id,
                    applied_rule_json, selected_group_id, rule_name_snapshot, rule_schema_version
             FROM games WHERE is_synced = 0 ORDER BY game_id
         """)
@@ -417,12 +416,13 @@ def sync_to_supabase():
             ''', m)
         rc.execute("SELECT setval(pg_get_serial_sequence('members', 'member_id'), COALESCE(MAX(member_id), 1)) FROM members")
 
-        lc.execute("SELECT group_id, group_name, default_rule_id, is_archived FROM groups")
+        lc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
         for g in lc.fetchall():
             rc.execute('''
-                INSERT INTO groups (group_id, group_name, default_rule_id, is_archived)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (group_id) DO UPDATE SET
+                    display_id = EXCLUDED.display_id,
                     group_name = EXCLUDED.group_name,
                     default_rule_id = EXCLUDED.default_rule_id,
                     is_archived = EXCLUDED.is_archived
@@ -460,20 +460,12 @@ def sync_to_supabase():
 
             rc.execute('''INSERT INTO games (
                 game_id, date,
-                p1_name, p1_score, p1_rank,
-                p2_name, p2_score, p2_rank,
-                p3_name, p3_score, p3_rank,
-                p4_name, p4_score, p4_rank,
                 group_id, rule_id, applied_rule_json,
                 selected_group_id, rule_name_snapshot, rule_schema_version
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''', (
                 new_game_id, game[1],
                 game[2], game[3], game[4],
-                game[5], game[6], game[7],
-                game[8], game[9], game[10],
-                game[11], game[12], game[13],
-                game[14], game[15], game[16],
-                game[17], game[18], game[19]
+                game[5], game[6], game[7]
             ))
 
             lc.execute("""
@@ -542,10 +534,6 @@ def init_db():
         c.execute('''CREATE TABLE IF NOT EXISTS games (
             game_id INTEGER PRIMARY KEY,
             date TEXT,
-            p1_name TEXT, p1_score INTEGER, p1_rank INTEGER,
-            p2_name TEXT, p2_score INTEGER, p2_rank INTEGER,
-            p3_name TEXT, p3_score INTEGER, p3_rank INTEGER,
-            p4_name TEXT, p4_score INTEGER, p4_rank INTEGER,
             group_id TEXT DEFAULT 'all',
             rule_id TEXT DEFAULT 'm_league',
             applied_rule_json TEXT
@@ -586,10 +574,12 @@ def init_db():
 
         c.execute('''CREATE TABLE IF NOT EXISTS groups (
             group_id TEXT PRIMARY KEY,
+            display_id TEXT,
             group_name TEXT NOT NULL,
             default_rule_id TEXT,
             is_archived INTEGER NOT NULL DEFAULT 0
         )''')
+        c.execute("ALTER TABLE groups ADD COLUMN IF NOT EXISTS display_id TEXT")
 
         c.execute('''CREATE TABLE IF NOT EXISTS group_memberships (
             group_id TEXT NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
@@ -630,19 +620,10 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
         with _local_db() as conn:
             c = conn.cursor()
 
-            c.execute('''INSERT INTO games (date,
-                p1_name, p1_score, p1_rank,
-                p2_name, p2_score, p2_rank,
-                p3_name, p3_score, p3_rank,
-                p4_name, p4_score, p4_rank,
-                is_synced, group_id, rule_id, applied_rule_json, rule_name_snapshot, selected_group_id
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
-                date_str,
-                sorted_p[0][0], sorted_p[0][1], 1,
-                sorted_p[1][0], sorted_p[1][1], 2,
-                sorted_p[2][0], sorted_p[2][1], 3,
-                sorted_p[3][0], sorted_p[3][1], 4,
-                0, group_id, rule_id, rule_json_str, rule_name_snap, group_id
+            c.execute('''INSERT INTO games (
+                date, is_synced, group_id, rule_id, applied_rule_json, rule_name_snapshot, selected_group_id
+            ) VALUES (?,?,?,?,?,?,?)''', (
+                date_str, 0, group_id, rule_id, rule_json_str, rule_name_snap, group_id
             ))
             next_id = c.lastrowid
             
@@ -658,20 +639,11 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
         return next_id
     with _remote_db() as conn:
         c = conn.cursor()
-        c.execute('''INSERT INTO games (date,
-            p1_name, p1_score, p1_rank,
-            p2_name, p2_score, p2_rank,
-            p3_name, p3_score, p3_rank,
-            p4_name, p4_score, p4_rank,
-            group_id, rule_id, applied_rule_json,
+        c.execute('''INSERT INTO games (
+            date, group_id, rule_id, applied_rule_json,
             selected_group_id, rule_name_snapshot, rule_schema_version
-        ) VALUES (%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s, 1) RETURNING game_id''', (
-            date_str,
-            sorted_p[0][0], sorted_p[0][1], 1,
-            sorted_p[1][0], sorted_p[1][1], 2,
-            sorted_p[2][0], sorted_p[2][1], 3,
-            sorted_p[3][0], sorted_p[3][1], 4,
-            group_id, rule_id, rule_json_str,
+        ) VALUES (%s, %s, %s, %s, %s, %s, 1) RETURNING game_id''', (
+            date_str, group_id, rule_id, rule_json_str,
             group_id, rule_name_snap
         ))
         next_id = c.fetchone()[0]
@@ -1057,18 +1029,14 @@ def import_games_from_df(df):
             ]
             sorted_p = sorted(players, key=lambda x: x[1], reverse=True)
             name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
-            c.execute('''INSERT INTO games (game_id, date,
-                p1_name, p1_score, p1_rank,
-                p2_name, p2_score, p2_rank,
-                p3_name, p3_score, p3_rank,
-                p4_name, p4_score, p4_rank
-            ) VALUES (%s, %s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s)''', (
-                next_id, str(row['date']),
-                players[0][0], players[0][1], name_to_rank[players[0][0]],
-                players[1][0], players[1][1], name_to_rank[players[1][0]],
-                players[2][0], players[2][1], name_to_rank[players[2][0]],
-                players[3][0], players[3][1], name_to_rank[players[3][0]],
-            ))
+            c.execute('''INSERT INTO games (game_id, date) VALUES (%s, %s)''', (next_id, str(row['date'])))
+            for i, (name, score) in enumerate(players):
+                seat = i + 1
+                rank = name_to_rank[name]
+                c.execute('''INSERT INTO game_participants 
+                    (game_id, seat, display_name_snapshot, score, rank) 
+                    VALUES (%s, %s, %s, %s, %s)''', 
+                    (next_id, seat, name, score, rank))
             next_id += 1
             count += 1
     return count
@@ -1205,14 +1173,14 @@ def get_groups():
         if IS_LOCAL:
             with _local_db() as conn:
                 c = conn.cursor()
-                c.execute("SELECT group_id, group_name, default_rule_id FROM groups WHERE is_archived = 0 ORDER BY rowid ASC, group_name ASC")
+                c.execute("SELECT group_id, group_name, default_rule_id, display_id FROM groups WHERE is_archived = 0 ORDER BY display_id ASC, group_name ASC")
                 group_rows = c.fetchall()
                 groups = []
-                for idx, (g_id, g_name, r_id) in enumerate(group_rows):
+                for idx, (g_id, g_name, r_id, d_id) in enumerate(group_rows):
                     c.execute("SELECT member_id FROM group_memberships WHERE group_id = ?", (g_id,))
                     members = [m[0] for m in c.fetchall()]
                     groups.append({
-                        "display_id": f"G{idx + 1:02d}",
+                        "display_id": d_id if d_id else f"G{idx + 1:02d}",
                         "group_id": g_id,
                         "group_name": g_name,
                         "default_rule_id": r_id,
@@ -1222,14 +1190,14 @@ def get_groups():
         else:
             with _remote_db() as conn:
                 c = conn.cursor()
-                c.execute("SELECT group_id, group_name, default_rule_id FROM groups WHERE is_archived = 0 ORDER BY group_name ASC")
+                c.execute("SELECT group_id, group_name, default_rule_id, display_id FROM groups WHERE is_archived = 0 ORDER BY display_id ASC, group_name ASC")
                 group_rows = c.fetchall()
                 groups = []
-                for idx, (g_id, g_name, r_id) in enumerate(group_rows):
+                for idx, (g_id, g_name, r_id, d_id) in enumerate(group_rows):
                     c.execute("SELECT member_id FROM group_memberships WHERE group_id = %s", (g_id,))
                     members = [m[0] for m in c.fetchall()]
                     groups.append({
-                        "display_id": f"G{idx + 1:02d}",
+                        "display_id": d_id if d_id else f"G{idx + 1:02d}",
                         "group_id": g_id,
                         "group_name": g_name,
                         "default_rule_id": r_id,
@@ -1240,19 +1208,20 @@ def get_groups():
         return []
 
 
-def save_group(group_id, group_name, default_rule_id, member_list):
+def save_group(group_id, group_name, default_rule_id, member_list, display_id=None):
     """グループの作成・更新"""
     if IS_LOCAL:
         with _local_db() as conn:
             c = conn.cursor()
             c.execute('''
-                INSERT INTO groups (group_id, group_name, default_rule_id, is_archived)
-                VALUES (?, ?, ?, 0)
+                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
+                VALUES (?, ?, ?, ?, 0)
                 ON CONFLICT(group_id) DO UPDATE SET
+                    display_id=COALESCE(groups.display_id, excluded.display_id),
                     group_name=excluded.group_name,
                     default_rule_id=excluded.default_rule_id,
                     is_archived=0
-            ''', (group_id, group_name, default_rule_id))
+            ''', (group_id, display_id, group_name, default_rule_id))
             
             c.execute("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
             for m in member_list:
@@ -1263,13 +1232,14 @@ def save_group(group_id, group_name, default_rule_id, member_list):
         with _remote_db() as conn:
             c = conn.cursor()
             c.execute('''
-                INSERT INTO groups (group_id, group_name, default_rule_id, is_archived)
-                VALUES (%s, %s, %s, 0)
+                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
+                VALUES (%s, %s, %s, %s, 0)
                 ON CONFLICT(group_id) DO UPDATE SET
+                    display_id=COALESCE(groups.display_id, EXCLUDED.display_id),
                     group_name=EXCLUDED.group_name,
                     default_rule_id=EXCLUDED.default_rule_id,
                     is_archived=0
-            ''', (group_id, group_name, default_rule_id))
+            ''', (group_id, display_id, group_name, default_rule_id))
             
             c.execute("DELETE FROM group_memberships WHERE group_id = %s", (group_id,))
             for m in member_list:
