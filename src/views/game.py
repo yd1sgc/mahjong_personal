@@ -195,11 +195,12 @@ def show_win_input():
             data["winners_data"] = []
             st.session_state.win_step = 10
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.button("ダブロン", use_container_width=True, disabled=not allow_multi, on_click=_set_multi, args=(2,))
-        with c2:
-            st.button("トリロン", use_container_width=True, disabled=not allow_multi, on_click=_set_multi, args=(3,))
+        if allow_multi:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.button("ダブロン", use_container_width=True, on_click=_set_multi, args=(2,))
+            with c2:
+                st.button("トリロン", use_container_width=True, on_click=_set_multi, args=(3,))
 
     # 単独和了のフロー (step 1 ~ 3)
     elif step == 1:
