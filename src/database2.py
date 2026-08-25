@@ -618,7 +618,7 @@ def init_db():
         )''')
 
 
-def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None, player_member_ids=None):
+def save_game(date_str, scores, players, local=False, rule_id="m_league", group_id="all", rule_config=None, player_member_ids=None, player_was_group_member=None):
     sorted_p = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     rule_json_str = json.dumps(rule_config, ensure_ascii=False) if rule_config else None
     if player_member_ids is None:
@@ -649,10 +649,11 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
             for rank, (name, score) in enumerate(sorted_p, start=1):
                 seat = players.index(name) + 1 if name in players else rank
                 m_id = player_member_ids.get(name)
+                was_member = player_was_group_member.get(name) if player_was_group_member else None
                 c.execute('''INSERT INTO game_participants 
-                    (game_id, seat, member_id, display_name_snapshot, score, rank)
-                    VALUES (?, ?, ?, ?, ?, ?)''', 
-                    (next_id, seat, m_id, name, score, rank))
+                    (game_id, seat, member_id, display_name_snapshot, score, rank, was_group_member)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)''', 
+                    (next_id, seat, m_id, name, score, rank, was_member))
 
         return next_id
     with _remote_db() as conn:
@@ -678,10 +679,11 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
         for rank, (name, score) in enumerate(sorted_p, start=1):
             seat = players.index(name) + 1 if name in players else rank
             m_id = player_member_ids.get(name)
+            was_member = player_was_group_member.get(name) if player_was_group_member else None
             c.execute('''INSERT INTO game_participants 
-                (game_id, seat, member_id, display_name_snapshot, score, rank)
-                VALUES (%s, %s, %s, %s, %s, %s)''', 
-                (next_id, seat, m_id, name, score, rank))
+                (game_id, seat, member_id, display_name_snapshot, score, rank, was_group_member)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)''', 
+                (next_id, seat, m_id, name, score, rank, was_member))
 
     return next_id
 
@@ -728,15 +730,19 @@ def get_games_data(year_filter=None):
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.was_group_member END) AS p1_was_group_member,
                 MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p2_name,
                 MAX(CASE WHEN gp.seat = 2 THEN gp.score END) AS p2_score,
                 MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.was_group_member END) AS p2_was_group_member,
                 MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p3_name,
                 MAX(CASE WHEN gp.seat = 3 THEN gp.score END) AS p3_score,
                 MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.was_group_member END) AS p3_was_group_member,
                 MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p4_name,
                 MAX(CASE WHEN gp.seat = 4 THEN gp.score END) AS p4_score,
-                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank
+                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.was_group_member END) AS p4_was_group_member
             FROM games g
             LEFT JOIN game_participants gp ON g.game_id = gp.game_id
             LEFT JOIN members m ON gp.member_id = m.member_id
@@ -754,15 +760,19 @@ def get_games_data(year_filter=None):
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.was_group_member END) AS p1_was_group_member,
                 MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p2_name,
                 MAX(CASE WHEN gp.seat = 2 THEN gp.score END) AS p2_score,
                 MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.was_group_member END) AS p2_was_group_member,
                 MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p3_name,
                 MAX(CASE WHEN gp.seat = 3 THEN gp.score END) AS p3_score,
                 MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.was_group_member END) AS p3_was_group_member,
                 MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p4_name,
                 MAX(CASE WHEN gp.seat = 4 THEN gp.score END) AS p4_score,
-                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank
+                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.was_group_member END) AS p4_was_group_member
             FROM games g
             LEFT JOIN game_participants gp ON g.game_id = gp.game_id
             LEFT JOIN members m ON gp.member_id = m.member_id

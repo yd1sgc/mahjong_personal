@@ -241,12 +241,24 @@ def show_simple_input():
             sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
             r_config = st.session_state.get("current_rule_config")
+            
+            group_id = st.session_state.get("current_group_id", "all")
+            groups = cache_utils.get_groups()
+            chosen_group = next((g for g in groups if g["group_id"] == group_id), None)
+            target_members_ids = chosen_group.get("members", []) if chosen_group else []
+            
+            player_was_group_member = {}
+            for p in players:
+                m_id = st.session_state.get("player_member_ids", {}).get(p)
+                player_was_group_member[p] = 1 if (m_id and m_id in target_members_ids) else 0
+                
             game_id = db.save_game(
                 date_str, scores, players, local=db.IS_LOCAL,
                 rule_id=st.session_state.get("current_rule_id", "m_league"),
-                group_id=st.session_state.get("current_group_id", "all"),
+                group_id=group_id,
                 rule_config=r_config,
-                player_member_ids=st.session_state.get("player_member_ids")
+                player_member_ids=st.session_state.get("player_member_ids"),
+                player_was_group_member=player_was_group_member
             )
             st.cache_data.clear()
             result_rows = [

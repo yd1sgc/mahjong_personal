@@ -79,15 +79,32 @@ def show_stats():
     game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
 
     # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
-    if chosen_grp["group_id"] != "all" and not include_guests and chosen_grp.get("members"):
+    if chosen_grp["group_id"] != "all" and not include_guests:
+        valid_games = []
+        # フォールバック用に現在のメンバー名を取得
         all_members = cache_utils.get_all_members()
         id_to_name = {m["member_id"]: m["member_name"] for m in all_members}
-        grp_mems_names = set(id_to_name[m_id] for m_id in chosen_grp["members"] if m_id in id_to_name)
+        grp_mems_names = set(id_to_name[m_id] for m_id in chosen_grp.get("members", []) if m_id in id_to_name)
         
-        valid_games = []
         for _, row in df_games.iterrows():
-            players_in_game = [row.get(f"p{i}_name") for i in range(1, 5)]
-            if all((p in grp_mems_names) for p in players_in_game if pd.notna(p) and str(p).strip()):
+            is_all_members = True
+            for i in range(1, 5):
+                p_name = row.get(f"p{i}_name")
+                if pd.isna(p_name) or not str(p_name).strip():
+                    continue
+                
+                was_member = row.get(f"p{i}_was_group_member")
+                if pd.notna(was_member):
+                    if int(was_member) == 0:
+                        is_all_members = False
+                        break
+                else:
+                    # pX_was_group_member が未設定（過去データ等）の場合は現在のメンバーで判定
+                    if p_name not in grp_mems_names:
+                        is_all_members = False
+                        break
+                        
+            if is_all_members:
                 valid_games.append(row["game_id"])
         
         df_games = df_games[df_games["game_id"].isin(valid_games)]
