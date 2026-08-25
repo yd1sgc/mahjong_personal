@@ -399,23 +399,24 @@ def show_ryukyoku_input():
     with c2:
         st.button("キャンセル", use_container_width=True, on_click=_cancel_ryukyoku)
 
-    st.write("---")
-    st.subheader("途中流局")
-    mid_ryukyoku_opts = {
-        "kyushu": "九種九牌",
-        "sufon": "四風子連打",
-        "sujin_riichi": "四家立直",
-        "sukan": "四槓散了",
-        "other": "その他"
-    }
-    sel_mid = st.selectbox("途中流局の理由", list(mid_ryukyoku_opts.keys()), format_func=lambda x: mid_ryukyoku_opts[x])
+    cfg_detail = st.session_state.get("current_rule_config", {}).get("detail", {})
+    mid_ryukyoku_opts = {}
+    if cfg_detail.get("kyushu", "renchan") != "none": mid_ryukyoku_opts["kyushu"] = "九種九牌"
+    if cfg_detail.get("sufon", "none") != "none": mid_ryukyoku_opts["sufon"] = "四風子連打"
+    if cfg_detail.get("sujin_riichi", "none") != "none": mid_ryukyoku_opts["sujin_riichi"] = "四家立直"
+    if cfg_detail.get("sukan", "allowed_single") != "none": mid_ryukyoku_opts["sukan"] = "四槓散了"
     
-    def _confirm_mid_ryukyoku(reason):
-        tenpai = list(tenpai_sel)
-        del st.session_state["tenpai_selection"]
-        game_logic.apply_mid_ryukyoku(reason, tenpai_players=tenpai)
+    if mid_ryukyoku_opts:
+        st.write("---")
+        st.subheader("途中流局")
+        sel_mid = st.selectbox("途中流局の理由", list(mid_ryukyoku_opts.keys()), format_func=lambda x: mid_ryukyoku_opts[x])
         
-    st.button("途中流局で確定", type="primary", use_container_width=True, on_click=_confirm_mid_ryukyoku, args=(sel_mid,))
+        def _confirm_mid_ryukyoku(reason):
+            tenpai = list(tenpai_sel)
+            del st.session_state["tenpai_selection"]
+            game_logic.apply_mid_ryukyoku(reason, tenpai_players=tenpai)
+            
+        st.button("途中流局で確定", type="primary", use_container_width=True, on_click=_confirm_mid_ryukyoku, args=(sel_mid,))
 
 def show_chombo_input():
     st.title("チョンボ")
