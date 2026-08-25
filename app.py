@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-is_local_mode = st.secrets.get("local_mode", False)
+is_local_mode = os.getenv("MAHJONG_FORCE_LOCAL") == "1" or st.secrets.get("local_mode", False)
 local_db_path = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if is_local_mode else None
 try:
     remote_db_kwargs = dict(st.secrets["database"])
