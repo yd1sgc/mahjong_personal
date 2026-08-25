@@ -725,7 +725,7 @@ def get_games_data(year_filter=None):
             query = '''
             SELECT 
                 g.game_id, g.date, g.group_id, 
-                COALESCE(g.rule_name_snapshot, g.rule_id) AS rule_id, 
+                g.rule_id, 
                 g.applied_rule_json, g.is_synced,
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
@@ -755,7 +755,7 @@ def get_games_data(year_filter=None):
             query = '''
             SELECT 
                 g.game_id, g.date, g.group_id, 
-                COALESCE(g.rule_name_snapshot, g.rule_id) AS rule_id, 
+                g.rule_id, 
                 g.applied_rule_json, 1 AS is_synced,
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
@@ -782,6 +782,10 @@ def get_games_data(year_filter=None):
             df = _fetch_df(conn, query)
     if df.empty:
         return df
+
+    # 古い 'm_league' を公式の 'preset_m_league' に読み替える
+    if 'rule_id' in df.columns:
+        df['rule_id'] = df['rule_id'].replace({'m_league': 'preset_m_league'})
 
     df['date'] = pd.to_datetime(df['date'], format='mixed')
     df = df.sort_values('game_id')
