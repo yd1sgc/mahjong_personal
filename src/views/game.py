@@ -5,12 +5,14 @@ from datetime import datetime
 import database2 as db
 import calc
 import game_logic
-from constants import KO_RON, OYA_RON, KO_TSUMO, OYA_TSUMO, HOUSE_RULES
+from constants import KO_RON, OYA_RON, KO_TSUMO, OYA_TSUMO, generate_rule_description
 
 
 def _show_rules_expander():
     with st.expander("ルール確認"):
-        for category, rules in HOUSE_RULES.items():
+        config = st.session_state.get("current_rule_config")
+        rule_desc = generate_rule_description(config)
+        for category, rules in rule_desc.items():
             st.markdown(f"**{category}**  \n" + "  \n".join(rules))
 
 
@@ -377,7 +379,8 @@ def show_ryukyoku_input():
     n_t = len(tenpai_sel)
     n_n = 4 - n_t
     if 0 < n_t < 4:
-        st.info(f"テンパイ {n_t}人: 各 +{3000 // n_t}点 / ノーテン {n_n}人: 各 -{3000 // n_n}点")
+        bappu = st.session_state.get("current_rule_config", {}).get("detail", {}).get("noten_bappu_pt", 3000)
+        st.info(f"テンパイ {n_t}人: 各 +{bappu // n_t}点 / ノーテン {n_n}人: 各 -{bappu // n_n}点")
     else:
         st.info("点数移動なし（全員テンパイ または 全員ノーテン）")
 
@@ -419,12 +422,16 @@ def show_chombo_input():
     players = st.session_state.players
     dealer = game_logic.get_dealer()
 
+    m_base = st.session_state.get("current_rule_config", {}).get("detail", {}).get("mangan_base_pt", 8000)
+    oya_pay = m_base // 2
+    ko_pay = m_base // 4
+
     st.subheader("チョンボしたプレイヤーを選択")
     for p in players:
         if p == dealer:
-            label = f" {p}（親）　→ 子3人に各4,000点"
+            label = f" {p}（親）　→ 子3人に各{oya_pay:,}点"
         else:
-            label = f"{p}　→ 親に4,000点・子2人に各2,000点"
+            label = f"{p}　→ 親に{oya_pay:,}点・子2人に各{ko_pay:,}点"
         st.button(label, key=f"chombo_{p}", use_container_width=True, on_click=game_logic.apply_chombo, args=(p,))
 
     def _cancel_chombo():

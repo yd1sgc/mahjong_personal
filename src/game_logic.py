@@ -122,8 +122,9 @@ def recalculate_from_history():
             noten = [p for p in players if p not in tenpai]
             n_t, n_n = len(tenpai), len(noten)
             if 0 < n_t < 4:
-                each_noten = 3000 // n_n
-                each_tenpai = 3000 // n_t
+                bappu = active_cfg.get("detail", {}).get("noten_bappu_pt", 3000)
+                each_noten = bappu // n_n
+                each_tenpai = bappu // n_t
                 for p in noten:
                     scores[p] -= each_noten
                 for p in tenpai:
@@ -142,21 +143,24 @@ def recalculate_from_history():
             detail_cfg = active_cfg.get("detail", {})
             chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
             if chombo_rule == "mangan_pay":
+                m_base = detail_cfg.get("mangan_base_pt", 8000)
+                oya_pay = m_base // 2
+                ko_pay = m_base // 4
                 if chombo_p == dealer:
                     for p in players:
                         if p != chombo_p:
-                            scores[chombo_p] -= 4000
-                            scores[p] += 4000
+                            scores[chombo_p] -= oya_pay
+                            scores[p] += oya_pay
                 else:
                     for p in players:
                         if p == chombo_p:
                             continue
                         elif p == dealer:
-                            scores[chombo_p] -= 4000
-                            scores[p] += 4000
+                            scores[chombo_p] -= oya_pay
+                            scores[p] += oya_pay
                         else:
-                            scores[chombo_p] -= 2000
-                            scores[p] += 2000
+                            scores[chombo_p] -= ko_pay
+                            scores[p] += ko_pay
             dealer_continues = True
 
         elif win_type == "multi_ron":
@@ -342,8 +346,9 @@ def apply_ryukyoku(tenpai_players):
     n_t, n_n = len(tenpai_players), len(noten)
 
     if 0 < n_t < 4:
-        each_noten_pay = 3000 // n_n
-        each_tenpai_get = 3000 // n_t
+        bappu = st.session_state.get("current_rule_config", {}).get("detail", {}).get("noten_bappu_pt", 3000)
+        each_noten_pay = bappu // n_n
+        each_tenpai_get = bappu // n_t
         for p in noten:
             scores[p] -= each_noten_pay
         for p in tenpai_players:
@@ -457,21 +462,24 @@ def apply_chombo(player):
     chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
 
     if chombo_rule == "mangan_pay":
+        m_base = detail_cfg.get("mangan_base_pt", 8000)
+        oya_pay = m_base // 2
+        ko_pay = m_base // 4
         if player == dealer:
             for p in players:
                 if p != player:
-                    scores[player] -= 4000
-                    scores[p] += 4000
+                    scores[player] -= oya_pay
+                    scores[p] += oya_pay
         else:
             for p in players:
                 if p == player:
                     continue
                 elif p == dealer:
-                    scores[player] -= 4000
-                    scores[p] += 4000
+                    scores[player] -= oya_pay
+                    scores[p] += oya_pay
                 else:
-                    scores[player] -= 2000
-                    scores[p] += 2000
+                    scores[player] -= ko_pay
+                    scores[p] += ko_pay
 
     record_round(player, None, "chombo", 0)
     st.session_state.input_mode = "normal"
@@ -502,38 +510,8 @@ def autosave_draft():
         st.session_state["draft_save_error"] = str(e)
 
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-
-
-@dataclass
-class GameStateContainer:
-    active: bool = False
-    mode: str = "detail"
-    players: List[str] = field(default_factory=list)
-    scores: Dict[str, int] = field(default_factory=dict)
-    round_idx: int = 0
-    honba: int = 0
-    riichi_stick: int = 0
-    riichi_declared: List[str] = field(default_factory=list)
-    furo_declared: List[str] = field(default_factory=list)
-    round_history: List[Dict[str, Any]] = field(default_factory=list)
-    undo_stack: List[Dict[str, Any]] = field(default_factory=list)
-    input_mode: str = "normal"
-    group_id: str = "all"
-    rule_id: str = "m_league"
-    rule_config: Dict[str, Any] = field(default_factory=dict)
-
-
-def init_game_container():
-    """対局コンテナの安全な1回限り初期化 (イベント衝突なし)"""
-    if "game_container" not in st.session_state:
-        st.session_state.game_container = GameStateContainer()
-
-
 def reset_game():
     """対局データの完全一括リセット"""
-    st.session_state.game_container = GameStateContainer()
     keys = [
         "game_active", "players", "scores", "round_idx", "honba",
         "riichi_stick", "riichi_declared", "furo_declared", "diff_target",

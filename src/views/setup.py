@@ -8,12 +8,12 @@ from datetime import datetime
 import database2 as db
 import calc
 import game_logic
-from constants import MEMBERS, INIT_SCORE, HOUSE_RULES, generate_rule_description
+from constants import MEMBERS, INIT_SCORE, generate_rule_description
 
 
 def _show_rules_expander(rule_config=None):
     with st.expander(" 適用中の詳細ルール確認"):
-        rule_desc = generate_rule_description(rule_config) if rule_config else HOUSE_RULES
+        rule_desc = generate_rule_description(rule_config)
         for category, rules in rule_desc.items():
             st.markdown(f"**{category}**  \n" + "  \n".join(rules))
             st.write("")

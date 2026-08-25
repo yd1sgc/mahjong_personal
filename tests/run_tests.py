@@ -10,10 +10,21 @@ sys.path.insert(0, os.path.join(project_root, 'src'))
 
 # Mock streamlit if not installed
 if "streamlit" not in sys.modules:
+    class MockSessionState(dict):
+        def __getattr__(self, key):
+            if key in self:
+                return self[key]
+            raise AttributeError(f"st.session_state has no attribute '{key}'")
+        def __setattr__(self, key, value):
+            self[key] = value
+        def __delattr__(self, key):
+            if key in self:
+                del self[key]
+
     mock_st = types.ModuleType("streamlit")
     mock_st.secrets = {"local_mode": True}
     mock_st.cache_data = lambda *args, **kwargs: (lambda f: f)
-    mock_st.session_state = {}
+    mock_st.session_state = MockSessionState()
     sys.modules["streamlit"] = mock_st
 
 import traceback
@@ -44,6 +55,18 @@ def run():
                     tests.append((f"test_calc.{attr}.{m}", getattr(instance, m)))
         elif attr.startswith("test_"):
             tests.append((f"test_calc.{attr}", obj))
+
+    # 4. test_game_logic
+    import test_game_logic
+    for attr in dir(test_game_logic):
+        obj = getattr(test_game_logic, attr)
+        if inspect.isclass(obj) and attr.startswith("Test"):
+            instance = obj()
+            for m in dir(instance):
+                if m.startswith("test_"):
+                    tests.append((f"test_game_logic.{attr}.{m}", getattr(instance, m)))
+        elif attr.startswith("test_"):
+            tests.append((f"test_game_logic.{attr}", obj))
 
     passed = 0
     failed = 0
