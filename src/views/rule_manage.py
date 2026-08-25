@@ -63,7 +63,7 @@ def show_rule_manage():
 def show_rule_list(official_presets, custom_rules):
     # ── 1. 公式システムテンプレート (編集不可 / 複製可) ───────
     st.subheader(" 公式テンプレート")
-        for p in official_presets:
+    for p in official_presets:
         p_id = p["rule_id"]
         disp_id = p.get("display_id", "PRESET")
         p_name = p["rule_name"]
