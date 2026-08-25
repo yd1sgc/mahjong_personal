@@ -1355,6 +1355,38 @@ def delete_member(member_id):
             c = conn.cursor()
             c.execute("UPDATE members SET is_archived = 1 WHERE member_id = %s", (member_id,))
 
+def migrate_past_groups():
+    """過去の対局のグループを一括修正し、グループ名もリネームする（一時機能）"""
+    query_shinseki = "SELECT group_id FROM groups WHERE group_name LIKE '%親族麻雀%' LIMIT 1"
+    query_majanbu = "SELECT group_id FROM groups WHERE group_name LIKE '%麻雀部%' LIMIT 1"
+
+    if IS_LOCAL:
+        with _local_db() as conn:
+            c = conn.cursor()
+            c.execute(query_shinseki)
+            row_s = c.fetchone()
+            c.execute(query_majanbu)
+            row_m = c.fetchone()
+            if row_s:
+                c.execute("UPDATE groups SET group_name = '親族麻雀' WHERE group_id = ?", (row_s[0],))
+                c.execute("UPDATE games SET group_id = ? WHERE game_id BETWEEN 2 AND 14", (row_s[0],))
+            if row_m:
+                c.execute("UPDATE groups SET group_name = '麻雀部' WHERE group_id = ?", (row_m[0],))
+                c.execute("UPDATE games SET group_id = ? WHERE game_id = 15", (row_m[0],))
+    else:
+        with _remote_db() as conn:
+            c = conn.cursor()
+            c.execute(query_shinseki)
+            row_s = c.fetchone()
+            c.execute(query_majanbu)
+            row_m = c.fetchone()
+            if row_s:
+                c.execute("UPDATE groups SET group_name = '親族麻雀' WHERE group_id = %s", (row_s[0],))
+                c.execute("UPDATE games SET group_id = %s WHERE game_id BETWEEN 2 AND 14", (row_s[0],))
+            if row_m:
+                c.execute("UPDATE groups SET group_name = '麻雀部' WHERE group_id = %s", (row_m[0],))
+                c.execute("UPDATE games SET group_id = %s WHERE game_id = 15", (row_m[0],))
+
 
 
 

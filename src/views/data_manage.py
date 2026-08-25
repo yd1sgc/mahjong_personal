@@ -95,7 +95,7 @@ def show_data_manage():
 
             action_mode = st.radio(
                 "操作項目を選択",
-                ["① 最終スコア直接修正", "② 各局の詳細修正", "③ 試合データの削除"],
+                ["① 最終スコア直接修正", "② 各局の詳細修正", "③ 試合データの削除", "④ 【一時機能】過去データのグループ一括修正"],
                 horizontal=True,
                 key="dm_action_mode"
             )
@@ -141,6 +141,13 @@ def show_data_manage():
                     st.cache_data.clear()
                     st.success(f"Game #{sel_id} を削除しました。")
                     st.rerun()
+            
+            elif action_mode == "④ 【一時機能】過去データのグループ一括修正":
+                st.caption("Game ID 2〜14のグループを『親族麻雀』へ、Game ID 15を『麻雀部』へ書き換えます。")
+                if st.button("一括修正を実行する", type="primary", use_container_width=True):
+                    db.migrate_past_groups()
+                    st.cache_data.clear()
+                    st.success("過去データのグループ書き換えが完了しました！成績画面でご確認ください。")
 
     with tab4:
         st.subheader("Supabaseへの同期")
