@@ -10,7 +10,13 @@ from views.round_edit import show_round_edit
 
 def show_data_manage():
     st.title("データ管理")
-
+    
+    _, c_center, _ = st.columns([1, 2, 1])
+    with c_center:
+        st.button(" ホーム", use_container_width=True, key="data_back_home", on_click=_set_view, args=("home",))
+    
+    st.divider()
+    
     if db.IS_LOCAL:
         pending = db.get_pending_count()
         if not st.session_state.get("online", True):
