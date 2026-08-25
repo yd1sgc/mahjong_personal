@@ -3,7 +3,8 @@
 - src/: アプリケーションのコアロジック（DB操作、計算、UIビュー）
 - 	ests/: テストコード
 - scripts/: DBマイグレーションなどの運用スクリプト
-- rchive/: 過去の不要なスクリプトや一時データ（探索・読込不要）
+- archive/: 過去の不要なスクリプトや一時データ（探索・読込不要）
+- .gemini/: AIエージェント設定（プロジェクト固有ルールとフック定義）
 
 # Current Status
 - プロジェクトのディレクトリ構造再編（AI段階的開示対応）を実施完了。
@@ -12,6 +13,7 @@
 - [ ] 今後タスクが発生した場合はここに記述する
 
 # Changelog (Recent History)
+- 2026-08-25: AIエージェント用のプロジェクト固有ルール（`.gemini/rules/user_global.md`）の動作緩和と、重要操作の強制確認フック（`.gemini/hooks.json`, `scripts/safety_hook.py`）を導入。
 - 2026-08-25: テスト用のgame_id 15を削除し、本番データ(元16)を15に繰り上げるDBメンテナンス（Supabase側）を実施。
 - 2026-08-25: ファイルを src, tests, scripts, archive に分離整理。AI用の誘導仕組みを導入。
 

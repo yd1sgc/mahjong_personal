@@ -1,0 +1,16 @@
+{
+  "project-safety-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/safety_hook.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
