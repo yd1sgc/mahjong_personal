@@ -98,8 +98,10 @@ def recalculate_state():
                 scores[winner] += riichi_stick * 1000
                 dealer_continues = True
             else:
-                oya_pay = int(((score / 2) + 99) // 100 * 100) + honba * 100
-                ko_pay = int(((score / 4) + 99) // 100 * 100) + honba * 100
+                base_ko_pay = int(((score / 4) + 99) // 100 * 100)
+                base_oya_pay = score - (base_ko_pay * 2)
+                oya_pay = base_oya_pay + honba * 100
+                ko_pay = base_ko_pay + honba * 100
                 for p in players:
                     if p == winner:
                         continue
