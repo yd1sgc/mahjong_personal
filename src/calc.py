@@ -192,7 +192,8 @@ def analyze_stats(df_games, df_rounds):
 
     has_riichi = 'riichi_names' in df_rounds.columns
     has_win_type = 'win_type' in df_rounds.columns
-    df_r = df_rounds[df_rounds['game_id'].isin(round_game_ids)]
+    valid_game_ids = set(df_games_with_rounds['game_id'])
+    df_r = df_rounds[df_rounds['game_id'].isin(valid_game_ids)]
 
     for _, r in df_r.iterrows():
         game_id = r['game_id']
