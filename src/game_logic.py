@@ -390,6 +390,10 @@ def autosave_draft():
         "undo_stack": list(st.session_state.get("undo_stack", [])[-3:]),
         "game_mode": st.session_state.get("game_mode", "detail"),
         "input_mode": st.session_state.get("input_mode", "normal"),
+        "current_rule_id": st.session_state.get("current_rule_id"),
+        "current_rule_config": st.session_state.get("current_rule_config"),
+        "current_group_id": st.session_state.get("current_group_id"),
+        "player_member_ids": st.session_state.get("player_member_ids", {}),
     }
     try:
         db.save_draft(state)
