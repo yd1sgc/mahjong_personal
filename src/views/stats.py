@@ -24,7 +24,7 @@ def show_stats():
 
     # ── フィルター選択エリア ─────────────────────────────────
     groups = cache_utils.get_groups()
-    rules = cache_utils.get_rule_templates()
+    rules = cache_utils.get_rule_templates(include_archived=True)
     
     def _stats_rule_label(r):
         if r.get("rule_id") == "all":
