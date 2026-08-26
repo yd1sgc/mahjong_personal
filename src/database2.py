@@ -271,7 +271,31 @@ def get_local_unsynced_games():
         if not os.path.exists(SQLITE_PATH):
             return pd.DataFrame()
         with _local_db() as conn:
-            return _fetch_df(conn, "SELECT * FROM games WHERE is_synced = 0 ORDER BY game_id DESC")
+            query = '''
+            SELECT 
+                g.game_id, g.date, g.group_id, 
+                g.rule_id, 
+                g.applied_rule_json, g.is_synced,
+                MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
+                MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+                MAX(CASE WHEN gp.seat = 2 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p2_name,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.score END) AS p2_score,
+                MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+                MAX(CASE WHEN gp.seat = 3 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p3_name,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.score END) AS p3_score,
+                MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+                MAX(CASE WHEN gp.seat = 4 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p4_name,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.score END) AS p4_score,
+                MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank
+            FROM games g
+            LEFT JOIN game_participants gp ON g.game_id = gp.game_id
+            LEFT JOIN members m ON gp.member_id = m.member_id
+            WHERE g.is_synced = 0
+            GROUP BY g.game_id
+            ORDER BY g.game_id DESC
+            '''
+            return _fetch_df(conn, query)
     except Exception:
         return pd.DataFrame()
 
@@ -639,14 +663,16 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
         return next_id
     with _remote_db() as conn:
         c = conn.cursor()
+        c.execute("SELECT COALESCE(MAX(game_id), 0) + 1 FROM games")
+        next_id = c.fetchone()[0]
+
         c.execute('''INSERT INTO games (
-            date, group_id, rule_id, applied_rule_json,
+            game_id, date, group_id, rule_id, applied_rule_json,
             selected_group_id, rule_name_snapshot, rule_schema_version
-        ) VALUES (%s, %s, %s, %s, %s, %s, 1) RETURNING game_id''', (
-            date_str, group_id, rule_id, rule_json_str,
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)''', (
+            next_id, date_str, group_id, rule_id, rule_json_str,
             group_id, rule_name_snap
         ))
-        next_id = c.fetchone()[0]
 
         for rank, (name, score) in enumerate(sorted_p, start=1):
             seat = players.index(name) + 1 if name in players else rank
