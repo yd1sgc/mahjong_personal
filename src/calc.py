@@ -187,17 +187,53 @@ def analyze_stats(df_games, df_rounds):
         "立直和了点": 0, "副露和了点": 0, "ダマ和了点": 0,
         "被リーチ放銃": 0, "被副露放銃": 0, "被ダマ放銃": 0,
         "和了点": 0, "放銃点": 0,
-        "流局": 0, "テンパイ": 0, "ノーテン罰符収支": 0, "チョンボ": 0,
+        "流局": 0, "テンパイ": 0, "ノーテン罰符収支": 0, "供託収支": 0, "チョンボ": 0,
     } for name in valid_players}
 
     has_riichi = 'riichi_names' in df_rounds.columns
     has_win_type = 'win_type' in df_rounds.columns
     valid_game_ids = set(df_games_with_rounds['game_id'])
-    df_r = df_rounds[df_rounds['game_id'].isin(valid_game_ids)]
+    
+    # 供託持ち越しのため時系列ソート必須
+    df_r = df_rounds[df_rounds['game_id'].isin(valid_game_ids)].sort_values(['game_id', 'id'])
+    
+    # ゲームごとのトッププレイヤーと座席順マップ作成
+    game_top_player_map = {}
+    game_players_list_map = {}
+    for _, game_row in df_games_with_rounds.iterrows():
+        gid = game_row['game_id']
+        players = []
+        max_score = -999999
+        top_p = None
+        for i in range(1, 5):
+            p_name = str(game_row.get(f'p{i}_name', '')).strip()
+            if not p_name or pd.isna(game_row.get(f'p{i}_name')):
+                continue
+            players.append(p_name)
+            score = float(game_row.get(f'p{i}_score', 0))
+            if score > max_score:
+                max_score = score
+                top_p = p_name
+        game_players_list_map[gid] = players
+        game_top_player_map[gid] = top_p
+
+    current_game_id = None
+    riichi_stick_pool = 0
 
     for _, r in df_r.iterrows():
         game_id = r['game_id']
         game_players = game_players_map.get(game_id, set())
+        game_players_list = game_players_list_map.get(game_id, [])
+        
+        # 試合が切り替わった時の供託トップ取り処理
+        if current_game_id != game_id:
+            if current_game_id is not None and riichi_stick_pool > 0:
+                top_p = game_top_player_map.get(current_game_id)
+                if top_p and top_p in round_stats:
+                    round_stats[top_p]["供託収支"] += riichi_stick_pool * 1000
+            current_game_id = game_id
+            riichi_stick_pool = 0
+
         winner = r.get('winner', '') or ''
         loser = r.get('loser', '') or ''
         win_type = (r.get('win_type', '') or '') if has_win_type else ''
@@ -245,6 +281,8 @@ def analyze_stats(df_games, df_rounds):
                 round_stats[m]["副露"] += 1
             if m in riichi_players:
                 round_stats[m]["リーチ"] += 1
+                round_stats[m]["供託収支"] -= 1000
+                riichi_stick_pool += 1
             if is_ryukyoku:
                 round_stats[m]["流局"] += 1
                 if m in tenpai_players:
@@ -263,6 +301,18 @@ def analyze_stats(df_games, df_rounds):
             if multi_wins:
                 total_score = 0
                 mw_winners = []
+                
+                # ダブロン時の頭ハネ（上家取り）判定
+                loser_idx = game_players_list.index(loser) if loser in game_players_list else 0
+                def distance(p):
+                    idx = game_players_list.index(p) if p in game_players_list else 0
+                    return (idx - loser_idx) % 4
+                closest_winner = min([wd.get("winner", "") for wd in multi_wins], key=distance) if multi_wins else ""
+                
+                if closest_winner and closest_winner in round_stats:
+                    round_stats[closest_winner]["供託収支"] += riichi_stick_pool * 1000
+                riichi_stick_pool = 0
+                
                 for w in multi_wins:
                     mw = w.get("winner")
                     ms = w.get("points_data", {}).get("total", 0)
@@ -317,6 +367,11 @@ def analyze_stats(df_games, df_rounds):
             if winner not in riichi_players and winner not in furo_players:
                 round_stats[winner]["ダマ和了"] += 1
                 round_stats[winner]["ダマ和了点"] += score
+                
+            # 通常和了時の供託回収
+            if win_type in ('ron', 'tsumo'):
+                round_stats[winner]["供託収支"] += riichi_stick_pool * 1000
+                riichi_stick_pool = 0
 
         if loser and loser in round_stats:
             round_stats[loser]["放銃"] += 1
@@ -333,6 +388,12 @@ def analyze_stats(df_games, df_rounds):
                 round_stats[loser]["被副露放銃"] += 1
             else:
                 round_stats[loser]["被ダマ放銃"] += 1
+
+    # 最後のゲームの残存供託処理
+    if current_game_id is not None and riichi_stick_pool > 0:
+        top_p = game_top_player_map.get(current_game_id)
+        if top_p and top_p in round_stats:
+            round_stats[top_p]["供託収支"] += riichi_stick_pool * 1000
 
     round_data = []
     for n, d in round_stats.items():
@@ -355,8 +416,9 @@ def analyze_stats(df_games, df_rounds):
             "ツモ率": round(d["ツモ"] / w_count * 100, 1) if w_count else 0.0,
             "放銃率": round(h_count / k * 100, 1),
             "和銃差": round((w_count - h_count) / k * 100, 1),
-            "テンパイ率": round(d["テンパイ"] / d["流局"] * 100, 1) if d["流局"] > 0 else 0.0,
+            "流局時聴牌率": round(d["テンパイ"] / d["流局"] * 100, 1) if d["流局"] > 0 else 0.0,
             "ノーテン罰符収支": d["ノーテン罰符収支"],
+            "供託収支": d["供託収支"],
             "副露率": round(f_count / k * 100, 1),
             "リーチ率": round(r_count / k * 100, 1),
             "立直和了率": round(d["リーチ後和了"] / r_count * 100, 1) if r_count else 0.0,

@@ -166,7 +166,7 @@ def show_stats():
         ])
 
         with tab_basic:
-            cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "和銃差", "テンパイ率", "ノーテン罰符収支"]
+            cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "和銃差", "流局時聴牌率", "ノーテン罰符収支", "供託収支"]
             show_cols = [c for c in cols if c in round_stats.columns]
             st.dataframe(
                 round_stats[show_cols].sort_values("和了率", ascending=False),
