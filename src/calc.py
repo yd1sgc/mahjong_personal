@@ -289,14 +289,16 @@ def analyze_stats(df_games, df_rounds):
                     round_stats[m]["テンパイ"] += 1
 
         if win_type == 'multi_ron':
-            multi_wins_json = r.get('multi_wins_json')
-            import json
+            multi_wins_data = r.get('multi_wins_json')
             multi_wins = []
-            if pd.notna(multi_wins_json) and multi_wins_json:
+            if isinstance(multi_wins_data, str) and multi_wins_data.strip():
+                import json
                 try:
-                    multi_wins = json.loads(multi_wins_json)
+                    multi_wins = json.loads(multi_wins_data)
                 except Exception:
                     pass
+            elif isinstance(multi_wins_data, list):
+                multi_wins = multi_wins_data
             
             if multi_wins:
                 total_score = 0
