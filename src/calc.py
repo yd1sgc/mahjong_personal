@@ -250,6 +250,56 @@ def analyze_stats(df_games, df_rounds):
                 if m in tenpai_players:
                     round_stats[m]["テンパイ"] += 1
 
+        if win_type == 'multi_ron':
+            multi_wins_json = r.get('multi_wins_json')
+            import json
+            multi_wins = []
+            if pd.notna(multi_wins_json) and multi_wins_json:
+                try:
+                    multi_wins = json.loads(multi_wins_json)
+                except Exception:
+                    pass
+            
+            if multi_wins:
+                total_score = 0
+                mw_winners = []
+                for w in multi_wins:
+                    mw = w.get("winner")
+                    ms = w.get("points_data", {}).get("total", 0)
+                    if not mw: continue
+                    mw_winners.append(mw)
+                    total_score += ms
+                    
+                    if mw in round_stats:
+                        round_stats[mw]["和了"] += 1
+                        round_stats[mw]["和了点"] += ms
+                        if mw in riichi_players:
+                            round_stats[mw]["リーチ後和了"] += 1
+                            round_stats[mw]["立直和了点"] += ms
+                        if mw in furo_players:
+                            round_stats[mw]["副露和了"] += 1
+                            round_stats[mw]["副露和了点"] += ms
+                        if mw not in riichi_players and mw not in furo_players:
+                            round_stats[mw]["ダマ和了"] += 1
+                            round_stats[mw]["ダマ和了点"] += ms
+                
+                if loser and loser in round_stats:
+                    round_stats[loser]["放銃"] += 1
+                    round_stats[loser]["放銃点"] += total_score
+                    if loser in riichi_players:
+                        round_stats[loser]["リーチ後放銃"] += 1
+                    if loser in furo_players:
+                        round_stats[loser]["副露放銃"] += 1
+                        
+                    if any(w in riichi_players for w in mw_winners):
+                        round_stats[loser]["被リーチ放銃"] += 1
+                    elif any(w in furo_players for w in mw_winners):
+                        round_stats[loser]["被副露放銃"] += 1
+                    else:
+                        round_stats[loser]["被ダマ放銃"] += 1
+                
+                continue
+
         if winner and winner in round_stats:
             score = r.get('score', 0)
             round_stats[winner]["和了"] += 1

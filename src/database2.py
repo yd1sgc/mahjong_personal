@@ -333,6 +333,7 @@ def init_local_db():
             win_type TEXT DEFAULT '',
             is_synced INTEGER DEFAULT 0
         )''')
+        _add_column_if_missing(c, "rounds", "multi_wins_json", "TEXT")
         c.execute('''CREATE TABLE IF NOT EXISTS drafts (
             id TEXT PRIMARY KEY,
             state_json TEXT NOT NULL,
@@ -509,14 +510,17 @@ def sync_to_supabase():
                     was_group_member = EXCLUDED.was_group_member
                 ''', (new_game_id, p[0], p[1], p[2], p[3], p[4], p[5]))
 
-            lc.execute("SELECT * FROM rounds WHERE game_id=? AND is_synced=0", (local_game_id,))
+            lc.execute("""
+                SELECT kyoku_name, winner, loser, score, furo_names, riichi_names, riichi_count, tenpai_names, win_type, multi_wins_json
+                FROM rounds WHERE game_id=? AND is_synced=0
+            """, (local_game_id,))
             for r in lc.fetchall():
                 rc.execute('''INSERT INTO rounds (
                     game_id, kyoku_name, winner, loser, score,
-                    furo_names, riichi_names, riichi_count, tenpai_names, win_type
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (
-                    new_game_id, r[2], r[3], r[4], r[5],
-                    r[6], r[7], r[8], r[9], r[10]
+                    furo_names, riichi_names, riichi_count, tenpai_names, win_type, multi_wins_json
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)''', (
+                    new_game_id, r[0], r[1], r[2], r[3],
+                    r[4], r[5], r[6], r[7], r[8], r[9]
                 ))
             lc.execute("UPDATE rounds SET is_synced=1 WHERE game_id=?", (local_game_id,))
             lc.execute("UPDATE games SET is_synced=1 WHERE game_id=?", (local_game_id,))
@@ -584,6 +588,7 @@ def init_db():
         )''')
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS tenpai_names TEXT DEFAULT ''")
         c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS win_type TEXT DEFAULT ''")
+        c.execute("ALTER TABLE rounds ADD COLUMN IF NOT EXISTS multi_wins_json JSONB")
         c.execute('''CREATE TABLE IF NOT EXISTS drafts (
             id TEXT PRIMARY KEY,
             state_json JSONB NOT NULL,
@@ -686,7 +691,7 @@ def save_game(date_str, scores, players, local=False, rule_id="m_league", group_
     return next_id
 
 
-def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None, local=False):
+def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type="", tenpai=None, multi_wins_json=None, local=False):
     furo_str = ",".join(furo) if isinstance(furo, list) else ""
     tenpai_str = ",".join(tenpai) if isinstance(tenpai, list) else ""
     if isinstance(riichi, list):
@@ -700,20 +705,20 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo, riichi, win_type
             c = conn.cursor()
             c.execute('''INSERT INTO rounds (
                 game_id, kyoku_name, winner, loser, score,
-                furo_names, riichi_names, riichi_count, tenpai_names, win_type, is_synced
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (
+                furo_names, riichi_names, riichi_count, tenpai_names, win_type, multi_wins_json, is_synced
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''', (
                 game_id, kyoku_name, winner, loser, score,
-                furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, 0
+                furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, multi_wins_json, 0
             ))
         return
     with _remote_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO rounds (
             game_id, kyoku_name, winner, loser, score,
-            furo_names, riichi_names, riichi_count, tenpai_names, win_type
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (
+            furo_names, riichi_names, riichi_count, tenpai_names, win_type, multi_wins_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)""", (
             game_id, kyoku_name, winner, loser, score,
-            furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type
+            furo_str, riichi_names_str, riichi_cnt, tenpai_str, win_type, multi_wins_json
         ))
 
 

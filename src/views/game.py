@@ -1,3 +1,4 @@
+import json
 import cache_utils
 import streamlit as st
 import pandas as pd
@@ -608,10 +609,16 @@ def show_endgame():
                 player_was_group_member=player_was_group_member
             )
             for r in st.session_state.round_history:
-                db.save_round(game_id, r["kyoku_name"], r["winner"], r["loser"],
-                              r["score"], r["furo"], r["riichi"],
+                multi_wins_json = None
+                if "multi_wins" in r and r["multi_wins"]:
+                    multi_wins_json = json.dumps(r["multi_wins"], ensure_ascii=False)
+                
+                db.save_round(game_id, r["kyoku_name"], r.get("winner", ""), r.get("loser", ""),
+                              r.get("score", 0), r.get("furo", []), r.get("riichi", []),
                               win_type=r.get("win_type", ""),
-                              tenpai=r.get("tenpai", []), local=db.IS_LOCAL)
+                              tenpai=r.get("tenpai", []),
+                              multi_wins_json=multi_wins_json,
+                              local=db.IS_LOCAL)
             st.cache_data.clear()
             result_rows = []
             for i, p in enumerate(sorted_p):
