@@ -18,7 +18,7 @@ def _show_rules_expander():
 
 
 def show_game():
-    end_reason = game_logic.check_game_end()
+    end_reason = st.session_state.game_state.check_game_end()
 
     if end_reason:
         st.info(f"終局条件：{end_reason}")
@@ -26,31 +26,31 @@ def show_game():
             st.session_state.input_mode = "endgame"
             st.rerun()
         if st.button(" 元に戻す",
-                     disabled=not st.session_state.undo_stack,
+                     disabled=not st.session_state.game_state.undo_stack,
                      use_container_width=True):
-            game_logic.undo_last()
+            st.session_state.game_state.undo_last()
             st.rerun()
         return
 
-    idx = st.session_state.round_idx
+    idx = st.session_state.game_state.round_idx
     if idx == 8:
-        top_score = max(st.session_state.scores.values())
+        top_score = max(st.session_state.game_state.scores.values())
         st.warning(f"西入り　トップ {top_score:,}点（30,000点未満）")
 
-    players = st.session_state.players
-    scores = st.session_state.scores
+    players = st.session_state.game_state.players
+    scores = st.session_state.game_state.scores
     diff_target = st.session_state.diff_target
-    riichi_declared = st.session_state.riichi_declared
-    furo_declared = st.session_state.furo_declared
-    dealer = game_logic.get_dealer()
+    riichi_declared = st.session_state.game_state.riichi_declared
+    furo_declared = st.session_state.game_state.furo_declared
+    dealer = st.session_state.game_state.get_dealer()
 
     if st.session_state.get("draft_save_error"):
         st.caption("下書き保存失敗（通信エラー）")
         st.session_state.pop("draft_save_error", None)
 
-    round_name = game_logic.get_round_name()
-    honba_str = f"{st.session_state.honba}本場"
-    kyotaku_str = f"供託{st.session_state.riichi_stick}本"
+    round_name = st.session_state.game_state.get_round_name()
+    honba_str = f"{st.session_state.game_state.honba}本場"
+    kyotaku_str = f"供託{st.session_state.game_state.riichi_stick}本"
     st.markdown(
         f"<div style='font-size:20px; font-weight:bold; margin-top:6px; margin-bottom:14px; padding-top:4px; display:flex; align-items:center; flex-wrap:wrap; gap:10px;'>"
         f"<span>{round_name}</span>"
@@ -65,9 +65,9 @@ def show_game():
 
     def _toggle_furo(player, is_furo):
         if is_furo:
-            st.session_state.furo_declared.remove(player)
+            st.session_state.game_state.furo_declared.remove(player)
         else:
-            st.session_state.furo_declared.append(player)
+            st.session_state.game_state.furo_declared.append(player)
 
     for p in players:
         score = scores[p]
@@ -114,7 +114,7 @@ def show_game():
                 can_riichi = not is_furo
                 st.button("立\n　", key=f"r_{p}",
                           disabled=not can_riichi, use_container_width=True,
-                          on_click=game_logic.declare_riichi, args=(p,))
+                          on_click=st.session_state.game_state.declare_riichi, args=(p,))
 
     def _goto_win():
         st.session_state.input_mode = "win"
@@ -123,7 +123,7 @@ def show_game():
 
     def _goto_ryukyoku():
         st.session_state.input_mode = "ryukyoku"
-        st.session_state.tenpai_selection = list(st.session_state.riichi_declared)
+        st.session_state.tenpai_selection = list(st.session_state.game_state.riichi_declared)
 
     def _goto_chombo():
         st.session_state.input_mode = "chombo"
@@ -137,8 +137,8 @@ def show_game():
     with c2:
         st.button("流局", use_container_width=True, on_click=_goto_ryukyoku)
 
-    st.button(" 元に戻す", disabled=not st.session_state.undo_stack,
-              use_container_width=True, on_click=game_logic.undo_last)
+    st.button(" 元に戻す", disabled=not st.session_state.game_state.undo_stack,
+              use_container_width=True, on_click=st.session_state.game_state.undo_last)
 
     with st.expander("その他の操作"):
         c3, c4 = st.columns(2)
@@ -168,7 +168,7 @@ def show_game():
 
 
 def show_win_input():
-    players = st.session_state.players
+    players = st.session_state.game_state.players
     step = st.session_state.win_step
     data = st.session_state.win_data
 
@@ -180,10 +180,10 @@ def show_win_input():
             st.session_state.win_step = 1
 
         for p in players:
-            mark = " ★" if p == game_logic.get_dealer() else ""
+            mark = " ★" if p == st.session_state.game_state.get_dealer() else ""
             st.button(f"{p}{mark}", key=f"w_{p}",
                       type="primary", use_container_width=True,
-                      on_click=_set_winner, args=(p, p == game_logic.get_dealer()))
+                      on_click=_set_winner, args=(p, p == st.session_state.game_state.get_dealer()))
                 
         st.write("---")
         
@@ -226,7 +226,7 @@ def show_win_input():
             st.session_state.win_step = 3
         
         def _apply_tsumo(pts_data):
-            game_logic.apply_win(data["winner"], "tsumo", pts_data)
+            st.session_state.game_state.apply_win(data["winner"], "tsumo", pts_data)
 
         if win_type == "ron":
             presets = OYA_RON if is_dealer else KO_RON
@@ -276,7 +276,7 @@ def show_win_input():
                         pd_ = {"each_pays": ko, "total": total}
                     else:
                         pd_ = {"ko_pays": ko, "oya_pays": oya, "total": total}
-                    game_logic.apply_win(data["winner"], "tsumo", pd_)
+                    st.session_state.game_state.apply_win(data["winner"], "tsumo", pd_)
 
             st.button("この点数で使う", key="calc_apply", on_click=_apply_calc, args=(win_type, is_dealer, _total, _ko_p, _oya_p))
 
@@ -285,7 +285,7 @@ def show_win_input():
         winner = data["winner"]
         for p in players:
             if p != winner:
-                st.button(p, key=f"loser_{p}", type="primary", use_container_width=True, on_click=game_logic.apply_win, args=(winner, data["win_type"], data["points_data"], p))
+                st.button(p, key=f"loser_{p}", type="primary", use_container_width=True, on_click=st.session_state.game_state.apply_win, args=(winner, data["win_type"], data["points_data"], p))
 
     # ダブロン・トリロンのフロー (step 10 ~ 12)
     elif step == 10:
@@ -310,8 +310,8 @@ def show_win_input():
             
         for p in players:
             if p != loser and p not in already_won:
-                mark = " ★" if p == game_logic.get_dealer() else ""
-                st.button(f"{p}{mark}", key=f"m_w_{p}", type="primary", use_container_width=True, on_click=_set_multi_winner, args=(p, p == game_logic.get_dealer()))
+                mark = " ★" if p == st.session_state.game_state.get_dealer() else ""
+                st.button(f"{p}{mark}", key=f"m_w_{p}", type="primary", use_container_width=True, on_click=_set_multi_winner, args=(p, p == st.session_state.game_state.get_dealer()))
                     
     elif step == 12:
         cw = data["current_winner"]
@@ -326,7 +326,7 @@ def show_win_input():
                 "points_data": {"total": pts}
             })
             if len(data["winners_data"]) >= data["num_winners"]:
-                game_logic.apply_multi_win(data["winners_data"], data["loser"])
+                st.session_state.game_state.apply_multi_win(data["winners_data"], data["loser"])
             else:
                 st.session_state.win_step = 11
             
@@ -353,8 +353,8 @@ def show_win_input():
 
 def show_ryukyoku_input():
     st.title("流局")
-    players = st.session_state.players
-    riichi_declared = st.session_state.riichi_declared
+    players = st.session_state.game_state.players
+    riichi_declared = st.session_state.game_state.riichi_declared
     tenpai_sel = st.session_state.tenpai_selection
 
     st.subheader("テンパイ / ノーテンを選択")
@@ -389,7 +389,7 @@ def show_ryukyoku_input():
     def _confirm_ryukyoku():
         tenpai = list(tenpai_sel)
         del st.session_state["tenpai_selection"]
-        game_logic.apply_ryukyoku(tenpai)
+        st.session_state.game_state.apply_ryukyoku(tenpai)
         
     def _cancel_ryukyoku():
         del st.session_state["tenpai_selection"]
@@ -416,14 +416,14 @@ def show_ryukyoku_input():
         def _confirm_mid_ryukyoku(reason):
             tenpai = list(tenpai_sel)
             del st.session_state["tenpai_selection"]
-            game_logic.apply_mid_ryukyoku(reason, tenpai_players=tenpai)
+            st.session_state.game_state.apply_mid_ryukyoku(reason, tenpai_players=tenpai)
             
         st.button("途中流局で確定", type="primary", use_container_width=True, on_click=_confirm_mid_ryukyoku, args=(sel_mid,))
 
 def show_chombo_input():
     st.title("チョンボ")
-    players = st.session_state.players
-    dealer = game_logic.get_dealer()
+    players = st.session_state.game_state.players
+    dealer = st.session_state.game_state.get_dealer()
 
     m_base = st.session_state.get("current_rule_config", {}).get("detail", {}).get("mangan_base_pt", 8000)
     oya_pay = m_base // 2
@@ -435,7 +435,7 @@ def show_chombo_input():
             label = f" {p}（親）　→ 子3人に各{oya_pay:,}点"
         else:
             label = f"{p}　→ 親に{oya_pay:,}点・子2人に各{ko_pay:,}点"
-        st.button(label, key=f"chombo_{p}", use_container_width=True, on_click=game_logic.apply_chombo, args=(p,))
+        st.button(label, key=f"chombo_{p}", use_container_width=True, on_click=st.session_state.game_state.apply_chombo, args=(p,))
 
     def _cancel_chombo():
         st.session_state.input_mode = "normal"
@@ -446,7 +446,7 @@ def show_edit_history():
     st.title("局履歴の修正")
     st.caption("修正内容に応じて全体の点数・本場・供託が自動再計算されます。")
 
-    history = st.session_state.round_history
+    history = st.session_state.game_state.round_history
     if not history:
         st.info("まだ局の記録がありません。")
         if st.button("戻る", use_container_width=True):
@@ -454,7 +454,7 @@ def show_edit_history():
             st.rerun()
         return
 
-    players = st.session_state.players
+    players = st.session_state.game_state.players
 
     # 1. これまでの対局履歴（一覧表示）
     type_label = {"ron": "ロン", "tsumo": "ツモ", "ryukyoku": "流局", "chombo": "チョンボ"}
@@ -550,8 +550,8 @@ def show_edit_history():
         history[sel_idx]["furo"] = new_furo
         history[sel_idx]["tenpai"] = new_tenpai if new_type == "ryukyoku" else []
 
-        st.session_state.round_history = history
-        game_logic.recalculate_from_history()
+        st.session_state.game_state.round_history = history
+        st.session_state.game_state.recalculate_state()
         st.session_state.input_mode = "normal"
         st.success("局のデータを修正し、点数・本場・供託を再計算しました。")
         st.rerun()
@@ -564,21 +564,21 @@ def show_edit_history():
 
 def show_endgame():
     st.title("終局")
-    players = st.session_state.players
-    scores = dict(st.session_state.scores)
+    players = st.session_state.game_state.players
+    scores = dict(st.session_state.game_state.scores)
 
-    riichi_bonus = st.session_state.riichi_stick * 1000
+    riichi_bonus = st.session_state.game_state.riichi_stick * 1000
     if riichi_bonus > 0:
         top_p = max(players, key=lambda p: scores[p])
         scores[top_p] += riichi_bonus
-        st.info(f"供託 {st.session_state.riichi_stick}本（{riichi_bonus:,}点）を {top_p} に加算します")
+        st.info(f"供託 {st.session_state.game_state.riichi_stick}本（{riichi_bonus:,}点）を {top_p} に加算します")
 
     sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
 
     r_config = st.session_state.get("current_rule_config")
     st.subheader("最終結果")
     for i, p in enumerate(sorted_p):
-        c_count = sum(1 for r in st.session_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
+        c_count = sum(1 for r in st.session_state.game_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
         pt = calc.calc_special_point(scores[p], i + 1, rule_config=r_config, chombo_count=c_count)
         st.write(f"{i + 1}位: **{p}**　{scores[p]:,}点　({pt:+.1f}pt)")
 
@@ -586,8 +586,8 @@ def show_endgame():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("記録して終了", type="primary", use_container_width=True):
-            st.session_state.scores = scores
-            st.session_state.riichi_stick = 0
+            st.session_state.game_state.scores = scores
+            st.session_state.game_state.riichi_stick = 0
             date_str = datetime.now().strftime("%Y-%m-%d")
             
             group_id = st.session_state.get("current_group_id", "all")
@@ -608,7 +608,7 @@ def show_endgame():
                 player_member_ids=st.session_state.get("player_member_ids"),
                 player_was_group_member=player_was_group_member
             )
-            for r in st.session_state.round_history:
+            for r in st.session_state.game_state.round_history:
                 multi_wins_json = None
                 if "multi_wins" in r and r["multi_wins"]:
                     multi_wins_json = json.dumps(r["multi_wins"], ensure_ascii=False)
@@ -622,7 +622,7 @@ def show_endgame():
             st.cache_data.clear()
             result_rows = []
             for i, p in enumerate(sorted_p):
-                c_count = sum(1 for r in st.session_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
+                c_count = sum(1 for r in st.session_state.game_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)
                 result_rows.append({
                     "rank": i + 1, 
                     "name": p, 

@@ -25,6 +25,8 @@ def _create_test_local_db_file():
             riichi_count INTEGER DEFAULT 0,
             tenpai_names TEXT DEFAULT '',
             win_type TEXT DEFAULT '',
+            multi_wins_json TEXT DEFAULT '[]',
+            ryukyoku_type TEXT DEFAULT '',
             is_synced INTEGER DEFAULT 0
         )
     ''')

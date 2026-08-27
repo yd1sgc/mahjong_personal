@@ -30,7 +30,10 @@ def show_setup():
         with cr:
             if st.button("再開する", type="primary", use_container_width=True, key="draft_resume"):
                 for k, v in draft.items():
-                    st.session_state[k] = v
+                    if k == "game_state_data":
+                        st.session_state.game_state = game_logic.GameState.from_dict(v)
+                    else:
+                        st.session_state[k] = v
                 st.session_state["draft_data"] = None
                 st.session_state["draft_time"] = None
                 st.rerun()
@@ -180,10 +183,12 @@ def show_setup():
             # 選択中のルールの配給原点 (init_score) を使用し、セッションにルール設定を保存
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             init_score_val = active_cfg.get("basic", {}).get("init_score", active_cfg.get("init_score", INIT_SCORE))
-            st.session_state.players = list(selected)
+            
+            gs = game_logic.GameState(list(selected), init_score_val, active_cfg)
+            st.session_state.game_state = gs
+            
             mem_name_to_id = {m["member_name"]: m["member_id"] for m in all_members}
             st.session_state.player_member_ids = {m: mem_name_to_id.get(m) for m in selected}
-            st.session_state.scores = {p: init_score_val for p in selected}
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
             st.session_state.current_rule_config = active_cfg

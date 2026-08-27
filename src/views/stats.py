@@ -152,58 +152,47 @@ def show_stats():
         st.subheader("試合成績")
         game_cols = ["名前", "試合数", "総合pt", "オカなし総合pt", "平均順位",
                      "連対率", "ラス回避率", "1着率", "2着率", "3着率", "4着率"]
-        show_cols = [c for c in game_cols if c in game_stats.columns]
+        extra_game_cols = [c for c in game_stats.columns if c not in game_cols]
+        show_game_cols = [c for c in game_cols if c in game_stats.columns] + extra_game_cols
         st.dataframe(
-            game_stats[show_cols].sort_values("総合pt", ascending=False),
+            game_stats[show_game_cols].sort_values("総合pt", ascending=False),
             use_container_width=True, hide_index=True,
         )
 
-    # ── 詳細成績テーブル (5タブ分割: コンパクトUI) ─────────
+    # ── 詳細成績テーブル (動的タブ対応) ─────────
     if not round_stats.empty:
         st.subheader(f"詳細成績（詳細記録 {n_round_games}試合を集計）")
-        tab_basic, tab_datan, tab_syubi, tab_riichi, tab_furo = st.tabs([
-            "基本", "打点", "守備", "立直", "副露"
-        ])
+        
+        categories = {
+            "基本": {"cols": ["名前", "局数", "和了率", "ツモ率", "放銃率", "和銃差", "流局時聴牌率", "ノーテン罰符収支", "供託収支"], "sort": ("和了率", False)},
+            "打点": {"cols": ["名前", "平均和了", "立直平均打点", "副露平均打点", "ダマ平均打点", "打点効率"], "sort": ("平均和了", False)},
+            "守備": {"cols": ["名前", "放銃率", "被リーチ放銃率", "被副露放銃率", "被ダマ放銃率", "平均放銃"], "sort": ("放銃率", True)},
+            "立直": {"cols": ["名前", "リーチ率", "立直和了率", "立直放銃率"], "sort": ("立直和了率", False)},
+            "副露": {"cols": ["名前", "副露率", "副露和了率", "副露放銃率", "ダマ和了率"], "sort": ("副露率", False)}
+        }
+        
+        known_cols = set(c for cat in categories.values() for c in cat["cols"])
+        extra_cols = [c for c in round_stats.columns if c not in known_cols and c != "名前"]
+        
+        tab_names = list(categories.keys())
+        if extra_cols:
+            tab_names.append("その他")
+            categories["その他"] = {"cols": ["名前"] + extra_cols, "sort": (extra_cols[0], False)}
 
-        with tab_basic:
-            cols = ["名前", "局数", "和了率", "ツモ率", "放銃率", "和銃差", "流局時聴牌率", "ノーテン罰符収支", "供託収支"]
-            show_cols = [c for c in cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("和了率", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
-
-        with tab_datan:
-            cols = ["名前", "平均和了", "立直平均打点", "副露平均打点", "ダマ平均打点", "打点効率"]
-            show_cols = [c for c in cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("平均和了", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
-
-        with tab_syubi:
-            cols = ["名前", "放銃率", "被リーチ放銃率", "被副露放銃率", "被ダマ放銃率", "平均放銃"]
-            show_cols = [c for c in cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("放銃率", ascending=True),
-                use_container_width=True, hide_index=True,
-            )
-
-        with tab_riichi:
-            cols = ["名前", "リーチ率", "立直和了率", "立直放銃率"]
-            show_cols = [c for c in cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("立直和了率", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
-
-        with tab_furo:
-            cols = ["名前", "副露率", "副露和了率", "副露放銃率", "ダマ和了率"]
-            show_cols = [c for c in cols if c in round_stats.columns]
-            st.dataframe(
-                round_stats[show_cols].sort_values("副露率", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
+        tabs = st.tabs(tab_names)
+        
+        for tab, tab_name in zip(tabs, tab_names):
+            with tab:
+                cat_info = categories[tab_name]
+                show_cols = [c for c in cat_info["cols"] if c in round_stats.columns]
+                sort_col, sort_asc = cat_info["sort"]
+                if sort_col not in show_cols:
+                    sort_col = show_cols[0]
+                
+                st.dataframe(
+                    round_stats[show_cols].sort_values(sort_col, ascending=sort_asc),
+                    use_container_width=True, hide_index=True,
+                )
 
     # ── 総合ポイント推移グラフ ────────────────────────────
     st.divider()
