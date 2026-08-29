@@ -388,6 +388,37 @@ def autosave_draft():
         st.session_state["draft_save_error"] = str(e)
 
 
+def restore_state_from_draft(draft_state):
+    """ドラフトデータから st.session_state を復元し、GameStateを再構築する"""
+    if not draft_state or not draft_state.get("game_active"):
+        return
+        
+    for k, v in draft_state.items():
+        if k == "game_state_data":
+            st.session_state["game_state"] = GameState.from_dict(v)
+        else:
+            st.session_state[k] = v
+            
+    # 旧バージョンのドラフトデータに対する互換性対応
+    if "game_state" not in st.session_state and "players" in draft_state:
+        rule_config = draft_state.get("current_rule_config", {})
+        init_score = rule_config.get("basic", {}).get("init_score", rule_config.get("init_score", 25000))
+        
+        compat_data = {
+            "players": draft_state.get("players", []),
+            "init_score": init_score,
+            "rule_config": rule_config,
+            "scores": draft_state.get("scores", {}),
+            "round_idx": draft_state.get("round_idx", 0),
+            "honba": draft_state.get("honba", 0),
+            "riichi_stick": draft_state.get("riichi_stick", 0),
+            "round_history": draft_state.get("round_history", []),
+            "riichi_declared": draft_state.get("riichi_declared", []),
+            "furo_declared": draft_state.get("furo_declared", []),
+            "undo_stack": draft_state.get("undo_stack", []),
+        }
+        st.session_state["game_state"] = GameState.from_dict(compat_data)
+
 def reset_game():
     """対局データの完全一括リセット"""
     keys = [

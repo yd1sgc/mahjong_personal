@@ -192,9 +192,9 @@ if "draft_data" not in st.session_state:
     draft_state, draft_time = db.load_draft()
     st.session_state["draft_data"] = draft_state
     st.session_state["draft_time"] = draft_time
-    if draft_state and draft_state.get("game_active"):
-        for k, v in draft_state.items():
-            st.session_state[k] = v
+    
+    import game_logic
+    game_logic.restore_state_from_draft(draft_state)
 
 
 
