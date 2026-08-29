@@ -355,6 +355,9 @@ def show_ryukyoku_input():
     st.title("流局")
     players = st.session_state.game_state.players
     riichi_declared = st.session_state.game_state.riichi_declared
+    
+    if "tenpai_selection" not in st.session_state:
+        st.session_state.tenpai_selection = list(riichi_declared)
     tenpai_sel = st.session_state.tenpai_selection
 
     st.subheader("テンパイ / ノーテンを選択")
