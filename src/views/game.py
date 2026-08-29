@@ -8,6 +8,12 @@ import calc
 import game_logic
 from constants import KO_RON, OYA_RON, KO_TSUMO, OYA_TSUMO, generate_rule_description
 
+def with_normal_mode(func):
+    """状態確定後に自動で input_mode を 'normal' に戻す高階関数"""
+    def wrapper(*args, **kwargs):
+        func(*args, **kwargs)
+        st.session_state.input_mode = "normal"
+    return wrapper
 
 def _show_rules_expander():
     with st.expander("ルール確認"):
@@ -226,7 +232,7 @@ def show_win_input():
             st.session_state.win_step = 3
         
         def _apply_tsumo(pts_data):
-            st.session_state.game_state.apply_win(data["winner"], "tsumo", pts_data)
+            with_normal_mode(st.session_state.game_state.apply_win)(data["winner"], "tsumo", pts_data)
 
         if win_type == "ron":
             presets = OYA_RON if is_dealer else KO_RON
@@ -276,7 +282,7 @@ def show_win_input():
                         pd_ = {"each_pays": ko, "total": total}
                     else:
                         pd_ = {"ko_pays": ko, "oya_pays": oya, "total": total}
-                    st.session_state.game_state.apply_win(data["winner"], "tsumo", pd_)
+                    with_normal_mode(st.session_state.game_state.apply_win)(data["winner"], "tsumo", pd_)
 
             st.button("この点数で使う", key="calc_apply", on_click=_apply_calc, args=(win_type, is_dealer, _total, _ko_p, _oya_p))
 
@@ -285,7 +291,7 @@ def show_win_input():
         winner = data["winner"]
         for p in players:
             if p != winner:
-                st.button(p, key=f"loser_{p}", type="primary", use_container_width=True, on_click=st.session_state.game_state.apply_win, args=(winner, data["win_type"], data["points_data"], p))
+                st.button(p, key=f"loser_{p}", type="primary", use_container_width=True, on_click=with_normal_mode(st.session_state.game_state.apply_win), args=(winner, data["win_type"], data["points_data"], p))
 
     # ダブロン・トリロンのフロー (step 10 ~ 12)
     elif step == 10:
@@ -326,7 +332,7 @@ def show_win_input():
                 "points_data": {"total": pts}
             })
             if len(data["winners_data"]) >= data["num_winners"]:
-                st.session_state.game_state.apply_multi_win(data["winners_data"], data["loser"])
+                with_normal_mode(st.session_state.game_state.apply_multi_win)(data["winners_data"], data["loser"])
             else:
                 st.session_state.win_step = 11
             
@@ -392,7 +398,7 @@ def show_ryukyoku_input():
     def _confirm_ryukyoku():
         tenpai = list(tenpai_sel)
         del st.session_state["tenpai_selection"]
-        st.session_state.game_state.apply_ryukyoku(tenpai)
+        with_normal_mode(st.session_state.game_state.apply_ryukyoku)(tenpai)
         
     def _cancel_ryukyoku():
         del st.session_state["tenpai_selection"]
@@ -419,7 +425,7 @@ def show_ryukyoku_input():
         def _confirm_mid_ryukyoku(reason):
             tenpai = list(tenpai_sel)
             del st.session_state["tenpai_selection"]
-            st.session_state.game_state.apply_mid_ryukyoku(reason, tenpai_players=tenpai)
+            with_normal_mode(st.session_state.game_state.apply_mid_ryukyoku)(reason, tenpai_players=tenpai)
             
         st.button("途中流局で確定", type="primary", use_container_width=True, on_click=_confirm_mid_ryukyoku, args=(sel_mid,))
 
@@ -438,7 +444,7 @@ def show_chombo_input():
             label = f" {p}（親）　→ 子3人に各{oya_pay:,}点"
         else:
             label = f"{p}　→ 親に{oya_pay:,}点・子2人に各{ko_pay:,}点"
-        st.button(label, key=f"chombo_{p}", use_container_width=True, on_click=st.session_state.game_state.apply_chombo, args=(p,))
+        st.button(label, key=f"chombo_{p}", use_container_width=True, on_click=with_normal_mode(st.session_state.game_state.apply_chombo), args=(p,))
 
     def _cancel_chombo():
         st.session_state.input_mode = "normal"
