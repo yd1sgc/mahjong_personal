@@ -24,13 +24,16 @@ def show_stats():
 
     # ── フィルター選択エリア ─────────────────────────────────
     groups = cache_utils.get_groups()
-    rules = cache_utils.get_rule_templates(include_archived=True)
+    all_rules = cache_utils.get_rule_templates(include_archived=True)
+    # [非表示] が名前に含まれるルールは成績画面のフィルターから除外する
+    rules = [r for r in all_rules if "[非表示]" not in r.get("rule_name", "")]
     
     def _stats_rule_label(r):
         if r.get("rule_id") == "all":
             return r["rule_name"]
         tag = "公式" if r.get("kind") == "official" else "カスタム"
-        return f"【{tag}】{r['rule_name']}"
+        arch = " (アーカイブ)" if r.get("is_archived") else ""
+        return f"【{tag}】{r['rule_name']}{arch}"
 
     rule_map = {r["rule_id"]: _stats_rule_label(r) for r in rules}
 
@@ -39,12 +42,19 @@ def show_stats():
 
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        sel_grp_name = st.selectbox(" グループ", [g["group_name"] for g in grp_options], key="stats_grp_sel")
-        chosen_grp = next((g for g in grp_options if g["group_name"] == sel_grp_name), grp_options[0])
+        chosen_grp = st.selectbox(
+            " グループ", 
+            options=grp_options, 
+            format_func=lambda g: g["group_name"], 
+            key="stats_grp_sel"
+        )
     with col_f2:
-        rule_disp_names = [_stats_rule_label(r) for r in rule_options]
-        sel_rule_disp = st.selectbox(" ルール", rule_disp_names, key="stats_rule_sel")
-        chosen_rule = next((r for r in rule_options if _stats_rule_label(r) == sel_rule_disp), rule_options[0])
+        chosen_rule = st.selectbox(
+            " ルール", 
+            options=rule_options, 
+            format_func=_stats_rule_label, 
+            key="stats_rule_sel"
+        )
 
     col_f3, col_f4 = st.columns(2)
     with col_f3:
