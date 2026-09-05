@@ -68,6 +68,18 @@ def run():
         elif attr.startswith("test_"):
             tests.append((f"test_game_logic.{attr}", obj))
 
+    # 5. test_interruption_recovery
+    import test_interruption_recovery
+    for attr in dir(test_interruption_recovery):
+        obj = getattr(test_interruption_recovery, attr)
+        if inspect.isclass(obj) and attr.startswith("Test"):
+            instance = obj()
+            for m in dir(instance):
+                if m.startswith("test_"):
+                    tests.append((f"test_interruption_recovery.{attr}.{m}", getattr(instance, m)))
+        elif attr.startswith("test_"):
+            tests.append((f"test_interruption_recovery.{attr}", obj))
+
     passed = 0
     failed = 0
     print(f"Running {len(tests)} tests...\n")
