@@ -372,10 +372,10 @@ def autosave_draft():
     
     gs = st.session_state.get("game_state")
     state = {
-        "view": st.session_state.get("view", "setup"),
+        "view": "game",
         "game_active": True,
         "game_mode": st.session_state.get("game_mode", "detail"),
-        "input_mode": st.session_state.get("input_mode", "normal"),
+        "input_mode": "normal",
         "current_rule_id": st.session_state.get("current_rule_id"),
         "current_group_id": st.session_state.get("current_group_id"),
         "player_member_ids": st.session_state.get("player_member_ids", {}),

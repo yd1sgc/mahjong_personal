@@ -185,11 +185,15 @@ class TestGameLogic:
             last_draft = saved_payloads[-1]
             assert "game_state_data" in last_draft
             assert "current_rule_config" in last_draft
+            assert last_draft.get("view") == "game"
+            assert last_draft.get("input_mode") == "normal"
 
             # 2. 和了でドラフト保存されること
             st.session_state.game_state.apply_win("P1", "ron", {"total": 3900}, loser="P2")
             assert len(saved_payloads) >= 2
             draft_after_win = saved_payloads[-1]
+            assert draft_after_win.get("view") == "game"
+            assert draft_after_win.get("input_mode") == "normal"
 
             # 3. セッションをクリアしてドラフトから復元できること
             st.session_state.clear()

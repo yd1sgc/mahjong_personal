@@ -9,10 +9,10 @@ import game_logic
 from constants import KO_RON, OYA_RON, KO_TSUMO, OYA_TSUMO, generate_rule_description
 
 def with_normal_mode(func):
-    """状態確定後に自動で input_mode を 'normal' に戻す高階関数"""
+    """状態確定時に自動で input_mode を 'normal' に戻す高階関数"""
     def wrapper(*args, **kwargs):
-        func(*args, **kwargs)
         st.session_state.input_mode = "normal"
+        func(*args, **kwargs)
     return wrapper
 
 def _show_rules_expander():
