@@ -9,8 +9,8 @@ def _set_view(v):
 
 def _resume_draft(draft):
     import streamlit as st
-    for k, v in draft.items():
-        st.session_state[k] = v
+    import game_logic
+    game_logic.restore_state_from_draft(draft)
     st.session_state["draft_data"] = None
     st.session_state["draft_time"] = None
 

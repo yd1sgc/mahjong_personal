@@ -171,3 +171,36 @@ class TestGameLogic:
         st.session_state.game_state.apply_ryukyoku(["P1", "P2"])
         assert st.session_state.game_state.round_idx == 0 # 局は進まない
         assert st.session_state.game_state.honba == 1
+
+    def test_draft_autosave_and_restore(self):
+        self.setup_method()
+        saved_payloads = []
+        import database2 as db
+        original_save = getattr(db, "save_draft", None)
+        try:
+            db.save_draft = lambda payload: saved_payloads.append(payload)
+            # 1. リーチ宣言でドラフト保存されること
+            st.session_state.game_state.declare_riichi("P2")
+            assert len(saved_payloads) >= 1
+            last_draft = saved_payloads[-1]
+            assert "game_state_data" in last_draft
+            assert "current_rule_config" in last_draft
+
+            # 2. 和了でドラフト保存されること
+            st.session_state.game_state.apply_win("P1", "ron", {"total": 3900}, loser="P2")
+            assert len(saved_payloads) >= 2
+            draft_after_win = saved_payloads[-1]
+
+            # 3. セッションをクリアしてドラフトから復元できること
+            st.session_state.clear()
+            assert "game_state" not in st.session_state
+            assert "current_rule_config" not in st.session_state
+
+            game_logic.restore_state_from_draft(draft_after_win)
+            assert "game_state" in st.session_state
+            assert isinstance(st.session_state.game_state, game_logic.GameState)
+            assert st.session_state.game_state.scores["P1"] == 25000 + 3900 + 1000  # 供託1本含む
+            assert st.session_state.current_rule_config["detail"]["noten_bappu_pt"] == 3000
+        finally:
+            if original_save is not None:
+                db.save_draft = original_save

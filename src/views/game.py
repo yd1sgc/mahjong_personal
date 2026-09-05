@@ -74,6 +74,7 @@ def show_game():
             st.session_state.game_state.furo_declared.remove(player)
         else:
             st.session_state.game_state.furo_declared.append(player)
+        game_logic.autosave_draft()
 
     for p in players:
         score = scores[p]

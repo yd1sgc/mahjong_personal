@@ -233,6 +233,7 @@ class GameState:
             if p in self.scores:
                 self.scores[p] -= 1000
                 self.riichi_stick += 1
+        autosave_draft()
 
     def record_round(self, winner, loser, win_type, score, tenpai=None):
         self.round_history.append({
@@ -381,6 +382,8 @@ def autosave_draft():
     }
     if gs:
         state["game_state_data"] = gs.to_dict()
+    if st.session_state.get("current_rule_config"):
+        state["current_rule_config"] = st.session_state.get("current_rule_config")
 
     try:
         db.save_draft(state)
@@ -418,6 +421,9 @@ def restore_state_from_draft(draft_state):
             "undo_stack": draft_state.get("undo_stack", []),
         }
         st.session_state["game_state"] = GameState.from_dict(compat_data)
+
+    if "game_state" in st.session_state and st.session_state["game_state"].rule_config:
+        st.session_state["current_rule_config"] = st.session_state["game_state"].rule_config
 
 def reset_game():
     """対局データの完全一括リセット"""
