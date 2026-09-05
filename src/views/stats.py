@@ -75,8 +75,18 @@ def show_stats():
 
     # ルールおよびグループでの対局データ絞り込み (DBカラムが存在する場合)
     if not df_games.empty:
-        if chosen_rule["rule_id"] != "all" and "rule_id" in df_games.columns:
-            df_games = df_games[df_games["rule_id"] == chosen_rule["rule_id"]]
+        if chosen_rule["rule_id"] != "all":
+            rule_target_id = chosen_rule.get("rule_id")
+            rule_target_name = chosen_rule.get("rule_name")
+            cond = False
+            if "rule_id" in df_games.columns:
+                cond = cond | (df_games["rule_id"] == rule_target_id)
+            if "rule_name_snapshot" in df_games.columns:
+                cond = cond | (df_games["rule_name_snapshot"] == rule_target_id)
+                if rule_target_name:
+                    cond = cond | (df_games["rule_name_snapshot"] == rule_target_name)
+            df_games = df_games[cond]
+
         if chosen_grp["group_id"] != "all" and "group_id" in df_games.columns:
             df_games = df_games[df_games["group_id"] == chosen_grp["group_id"]]
 

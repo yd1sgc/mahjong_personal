@@ -727,8 +727,10 @@ def get_games_data(year_filter=None):
         with _local_db() as conn:
             query = '''
             SELECT 
-                g.game_id, g.date, g.group_id, 
-                g.rule_id, 
+                g.game_id, g.date,
+                COALESCE(NULLIF(g.group_id, 'all'), g.selected_group_id, g.group_id) AS group_id, 
+                g.rule_id,
+                COALESCE(g.rule_name_snapshot, '') AS rule_name_snapshot,
                 g.applied_rule_json, g.is_synced,
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
@@ -757,8 +759,10 @@ def get_games_data(year_filter=None):
         with _remote_db() as conn:
             query = '''
             SELECT 
-                g.game_id, g.date, g.group_id, 
-                g.rule_id, 
+                g.game_id, g.date,
+                COALESCE(NULLIF(g.group_id, 'all'), g.selected_group_id, g.group_id) AS group_id, 
+                g.rule_id,
+                COALESCE(g.rule_name_snapshot, '') AS rule_name_snapshot,
                 g.applied_rule_json, 1 AS is_synced,
                 MAX(CASE WHEN gp.seat = 1 THEN COALESCE(m.member_name, gp.display_name_snapshot) END) AS p1_name,
                 MAX(CASE WHEN gp.seat = 1 THEN gp.score END) AS p1_score,
