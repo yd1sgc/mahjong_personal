@@ -70,102 +70,39 @@ def show_stats():
 
     st.divider()
 
-    df_games = cache_utils.get_games_data(year_filter=selected_year)
-    df_rounds = cache_utils.get_rounds_data()
+    # ── 新V2 SQL集計呼び出し ─────────────────────────────────
+    gid_filter = chosen_grp["group_id"]
+    rule_filter = chosen_rule["rule_id"]
 
-    # ルールおよびグループでの対局データ絞り込み (DBカラムが存在する場合)
-    if not df_games.empty:
-        if chosen_rule["rule_id"] != "all":
-            rule_target_id = chosen_rule.get("rule_id")
-            rule_target_name = chosen_rule.get("rule_name")
-            cond = False
-            if "rule_id" in df_games.columns:
-                cond = cond | (df_games["rule_id"] == rule_target_id)
-            if "rule_name_snapshot" in df_games.columns:
-                cond = cond | (df_games["rule_name_snapshot"] == rule_target_id)
-                if rule_target_name:
-                    cond = cond | (df_games["rule_name_snapshot"] == rule_target_name)
-            df_games = df_games[cond]
+    game_stats = db.get_game_stats_summary(
+        group_id=gid_filter,
+        rule_id=rule_filter,
+        year=selected_year,
+        include_guests=include_guests
+    )
 
-        if chosen_grp["group_id"] != "all" and "group_id" in df_games.columns:
-            df_games = df_games[df_games["group_id"] == chosen_grp["group_id"]]
+    round_stats, n_round_games = db.get_round_stats_summary(
+        group_id=gid_filter,
+        rule_id=rule_filter,
+        year=selected_year,
+        include_guests=include_guests
+    )
 
-    if df_games.empty:
+    df_results = db.get_results_data(
+        group_id=gid_filter,
+        rule_id=rule_filter,
+        year=selected_year,
+        include_guests=include_guests
+    )
+
+    if df_results.empty:
         st.info("条件に一致する対局記録がありません。")
         if st.button(" ホーム画面へ", type="primary", use_container_width=True, key="empty_to_home"):
             st.session_state.view = "home"
             st.rerun()
         return
 
-    all_names = pd.unique(df_games[['p1_name', 'p2_name', 'p3_name', 'p4_name']].values.ravel('K'))
-    real_members = sorted([p for p in all_names if pd.notna(p) and str(p).strip()])
-
-    game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
-
-    # グループメンバーによる成績表フィルタリング (ゲスト非表示時)
-    if chosen_grp["group_id"] != "all" and not include_guests:
-        valid_games = []
-        # フォールバック用に現在のメンバー名を取得
-        all_members = cache_utils.get_all_members()
-        id_to_name = {m["member_id"]: m["member_name"] for m in all_members}
-        grp_mems_names = set(id_to_name[m_id] for m_id in chosen_grp.get("members", []) if m_id in id_to_name)
-        
-        for _, row in df_games.iterrows():
-            is_all_members = True
-            for i in range(1, 5):
-                p_name = row.get(f"p{i}_name")
-                if pd.isna(p_name) or not str(p_name).strip():
-                    continue
-                
-                was_member = row.get(f"p{i}_was_group_member")
-                if pd.notna(was_member):
-                    if int(was_member) == 0:
-                        is_all_members = False
-                        break
-                else:
-                    # pX_was_group_member が未設定（過去データ等）の場合は現在のメンバーで判定
-                    if p_name not in grp_mems_names:
-                        is_all_members = False
-                        break
-                        
-            if is_all_members:
-                valid_games.append(row["game_id"])
-        
-        df_games = df_games[df_games["game_id"].isin(valid_games)]
-        
-        # 再計算
-        game_stats, round_stats, n_round_games = calc.analyze_stats(df_games, df_rounds)
-
-    chombo_counts = calc.get_chombo_counts(df_rounds)
-    df_sorted = df_games.sort_values("game_id").reset_index(drop=True)
-    rows = []
-    for _, row in df_sorted.iterrows():
-        cfg = None
-        rule_json = row.get("applied_rule_json")
-        if pd.notna(rule_json) and isinstance(rule_json, str) and rule_json.strip():
-            try:
-                import json
-                cfg = json.loads(rule_json)
-            except Exception:
-                cfg = None
-
-        for i in range(1, 5):
-            name = row.get(f"p{i}_name")
-            if pd.isna(name) or not str(name).strip():
-                continue
-            score = int(row[f"p{i}_score"])
-            rank = int(row[f"p{i}_rank"])
-            n_str = str(name).strip()
-            c_count = chombo_counts.get((row["game_id"], n_str), 0)
-            rows.append({
-                "game_id": row["game_id"],
-                "date": row["date"],
-                "name": n_str,
-                "score": score,
-                "rank": rank,
-                "pt": calc.calc_special_point(score, rank, rule_config=cfg, chombo_count=c_count),
-            })
-    df_results = pd.DataFrame(rows, columns=["game_id", "date", "name", "score", "rank", "pt"])
+    real_members = sorted(df_results["name"].dropna().unique().tolist())
 
     # ── 試合成績テーブル ──────────────────────────────────
     if not game_stats.empty:
@@ -178,6 +115,7 @@ def show_stats():
             game_stats[show_game_cols].sort_values("総合pt", ascending=False),
             use_container_width=True, hide_index=True,
         )
+
 
     # ── 詳細成績テーブル (動的タブ対応) ─────────
     if not round_stats.empty:
@@ -217,7 +155,7 @@ def show_stats():
     # ── 総合ポイント推移グラフ ────────────────────────────
     st.divider()
     st.subheader("総合ポイント推移")
-    game_ids_sorted = df_sorted["game_id"].tolist()
+    game_ids_sorted = df_results["game_id"].drop_duplicates().tolist()
     df_pivot = (
         df_results.pivot_table(index="game_id", columns="name", values="pt", aggfunc="sum")
         .reindex(game_ids_sorted)
@@ -227,6 +165,7 @@ def show_stats():
     df_cumsum.index = [f"G{i+1:03}" for i in range(len(game_ids_sorted))]
     zero_row = pd.DataFrame(0, index=["G000"], columns=df_cumsum.columns)
     df_chart = pd.concat([zero_row, df_cumsum])
+
 
     top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
     default_sel = [m for m in top5 if m in df_chart.columns]
@@ -329,31 +268,42 @@ def show_stats():
         st.divider()
 
     history_rows = []
-    for gid, g in df_results.groupby("game_id"):
+    # played_at 降順で対局履歴を作成
+    for gid, g in df_results.groupby("game_id", sort=False):
         g_sorted = g.sort_values("rank").reset_index(drop=True)
         if len(g_sorted) < 4:
             continue
         d = g_sorted.iloc[0]["date"]
         history_rows.append({
-            "#": int(gid),
+            "game_id": gid,
             "日付": d.strftime('%Y-%m-%d') if pd.notna(d) else "日付不明",
             "1位": f"{g_sorted.iloc[0]['name']} ({g_sorted.iloc[0]['pt']:+.1f})",
             "2位": f"{g_sorted.iloc[1]['name']} ({g_sorted.iloc[1]['pt']:+.1f})",
             "3位": f"{g_sorted.iloc[2]['name']} ({g_sorted.iloc[2]['pt']:+.1f})",
             "4位": f"{g_sorted.iloc[3]['name']} ({g_sorted.iloc[3]['pt']:+.1f})",
         })
-    df_history = pd.DataFrame(sorted(history_rows, key=lambda r: r["#"], reverse=True))
-    st.dataframe(df_history, use_container_width=True, hide_index=True)
+
+    # 最新順に並べ替え、表示用連番 (#) を付与
+    history_rows.reverse()
+    for idx, r in enumerate(history_rows):
+        r["#"] = len(history_rows) - idx
+
+    df_history = pd.DataFrame(history_rows)
+    if not df_history.empty:
+        show_history = df_history[["#", "日付", "1位", "2位", "3位", "4位"]]
+        st.dataframe(show_history, use_container_width=True, hide_index=True)
 
     # ── 複数試合の合計集計 ────────────────────────────────
     st.divider()
     st.subheader("選択試合の合計集計")
-    all_game_ids = df_games.sort_values("game_id", ascending=False)["game_id"].tolist()
+    all_game_ids = [r["game_id"] for r in history_rows]
+
     def _format_game_id(gid):
-        rows = df_history[df_history['#'] == int(gid)]
-        if rows.empty:
-            return f"#{int(gid)}  データ不明"
-        return f"#{int(gid)}  {rows['日付'].values[0]}  {rows['1位'].values[0]}"
+        matched = [r for r in history_rows if r["game_id"] == gid]
+        if not matched:
+            return f"データ不明 ({gid[:8]})"
+        row = matched[0]
+        return f"#{row['#']}  {row['日付']}  {row['1位']}"
 
     selected_ids = st.multiselect(
         "集計するゲームIDを選択",
@@ -361,6 +311,7 @@ def show_stats():
         format_func=_format_game_id,
         key="agg_game_ids",
     )
+
     if selected_ids:
         df_sel = df_results[df_results["game_id"].isin(selected_ids)]
         df_agg = (

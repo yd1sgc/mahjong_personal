@@ -779,3 +779,248 @@ def mark_as_synced(game_id=None):
             c.execute(f"UPDATE games SET is_synced = 1 WHERE game_id = {ph}", (game_id,))
         else:
             c.execute("UPDATE games SET is_synced = 1")
+
+
+# ==============================================================================
+#  正規化SQL成績集計API
+# ==============================================================================
+
+def get_game_stats_summary(group_id=None, rule_id=None, year=None, include_guests=True):
+    """game_participants と games から試合成績集計 DataFrame を取得する。"""
+    ph = "?" if IS_LOCAL else "%s"
+    where_clauses = []
+    params = []
+
+    if group_id and group_id != "all":
+        where_clauses.append(f"g.group_id = {ph}")
+        params.append(group_id)
+
+    if not include_guests:
+        where_clauses.append("m.is_guest = 0")
+
+    if rule_id and rule_id != "all":
+        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
+        params.extend([rule_id, rule_id])
+
+    if year and year != "全期間":
+        where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
+        params.append(str(year))
+
+    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    col_1 = "`1着率`" if IS_LOCAL else '"1着率"'
+    col_2 = "`2着率`" if IS_LOCAL else '"2着率"'
+    col_3 = "`3着率`" if IS_LOCAL else '"3着率"'
+    col_4 = "`4着率`" if IS_LOCAL else '"4着率"'
+
+    query = f"""
+    SELECT 
+        m.member_name AS 名前,
+        COUNT(gp.game_id) AS 試合数,
+        ROUND(SUM(gp.point), 1) AS 総合pt,
+        ROUND(SUM(
+            (gp.final_score - 25000) / 1000.0 + 
+            CASE gp.rank 
+                WHEN 1 THEN 30.0 
+                WHEN 2 THEN 10.0 
+                WHEN 3 THEN -10.0 
+                WHEN 4 THEN -30.0 
+                ELSE 0.0 
+            END
+        ), 1) AS オカなし総合pt,
+        ROUND(AVG(gp.rank), 2) AS 平均順位,
+        ROUND(SUM(CASE WHEN gp.rank <= 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS 連対率,
+        ROUND(SUM(CASE WHEN gp.rank <= 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS ラス回避率,
+        ROUND(SUM(CASE WHEN gp.rank = 1 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_1},
+        ROUND(SUM(CASE WHEN gp.rank = 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_2},
+        ROUND(SUM(CASE WHEN gp.rank = 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_3},
+        ROUND(SUM(CASE WHEN gp.rank = 4 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_4}
+    FROM game_participants gp
+    JOIN games g ON gp.game_id = g.game_id
+    JOIN members m ON gp.member_id = m.member_id
+    {where_str}
+    GROUP BY gp.member_id, m.member_name
+    ORDER BY 総合pt DESC
+    """
+    with _db() as conn:
+        return _fetch_df(conn, query, tuple(params))
+
+
+def get_results_data(group_id=None, rule_id=None, year=None, include_guests=True):
+    """グラフ・レコード・相性・履歴用の全プレイヤーリザルト DataFrame を取得する。"""
+    ph = "?" if IS_LOCAL else "%s"
+    where_clauses = []
+    params = []
+
+    if group_id and group_id != "all":
+        where_clauses.append(f"g.group_id = {ph}")
+        params.append(group_id)
+
+    if not include_guests:
+        where_clauses.append("m.is_guest = 0")
+
+    if rule_id and rule_id != "all":
+        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
+        params.extend([rule_id, rule_id])
+
+    if year and year != "全期間":
+        where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
+        params.append(str(year))
+
+    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    query = f"""
+    SELECT 
+        gp.game_id,
+        g.played_at AS date,
+        m.member_name AS name,
+        gp.final_score AS score,
+        gp.rank,
+        gp.point AS pt
+    FROM game_participants gp
+    JOIN games g ON gp.game_id = g.game_id
+    JOIN members m ON gp.member_id = m.member_id
+    {where_str}
+    ORDER BY g.played_at ASC, gp.game_id ASC, gp.rank ASC
+    """
+    with _db() as conn:
+        df = _fetch_df(conn, query, tuple(params))
+        if not df.empty and "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        return df
+
+
+def get_round_stats_summary(group_id=None, rule_id=None, year=None, include_guests=True):
+    """round_seats と rounds, games から局詳細集計 DataFrame を取得する。"""
+    ph = "?" if IS_LOCAL else "%s"
+    where_clauses = []
+    params = []
+
+    if group_id and group_id != "all":
+        where_clauses.append(f"g.group_id = {ph}")
+        params.append(group_id)
+
+    if not include_guests:
+        where_clauses.append("m.is_guest = 0")
+
+    if rule_id and rule_id != "all":
+        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
+        params.extend([rule_id, rule_id])
+
+    if year and year != "全期間":
+        where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
+        params.append(str(year))
+
+    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    # 放銃時の相手立直・副露判定のため、各 round_id における立直者・副露者の存在を集計してサブクエリ結合
+    query = f"""
+    WITH round_context AS (
+        SELECT 
+            round_id,
+            MAX(is_riichi) AS has_riichi_player,
+            MAX(is_furo) AS has_furo_player
+        FROM round_seats
+        GROUP BY round_id
+    )
+    SELECT 
+        m.member_name AS 名前,
+        COUNT(rs.round_id) AS 局数,
+        SUM(rs.is_winner) AS 和了,
+        SUM(CASE WHEN rs.is_winner = 1 AND r.result_type = 'tsumo' THEN 1 ELSE 0 END) AS ツモ,
+        SUM(rs.is_loser) AS 放銃,
+        SUM(rs.is_riichi) AS リーチ,
+        SUM(rs.is_furo) AS 副露,
+        SUM(CASE WHEN r.result_type = 'ryukyoku' THEN 1 ELSE 0 END) AS 流局,
+        SUM(rs.is_tenpai) AS テンパイ,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_riichi = 1 THEN 1 ELSE 0 END) AS リーチ後和了,
+        SUM(CASE WHEN rs.is_loser = 1 AND rs.is_riichi = 1 THEN 1 ELSE 0 END) AS リーチ後放銃,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_furo = 1 THEN 1 ELSE 0 END) AS 副露和了,
+        SUM(CASE WHEN rs.is_loser = 1 AND rs.is_furo = 1 THEN 1 ELSE 0 END) AS 副露放銃,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_riichi = 0 AND rs.is_furo = 0 THEN 1 ELSE 0 END) AS ダマ和了,
+        SUM(CASE WHEN rs.is_winner = 1 THEN rs.base_point ELSE 0 END) AS 和了点合計,
+        SUM(CASE WHEN rs.is_loser = 1 THEN ABS(rs.base_point) ELSE 0 END) AS 放銃点合計,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_riichi = 1 THEN rs.base_point ELSE 0 END) AS 立直和了点合計,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_furo = 1 THEN rs.base_point ELSE 0 END) AS 副露和了点合計,
+        SUM(CASE WHEN rs.is_winner = 1 AND rs.is_riichi = 0 AND rs.is_furo = 0 THEN rs.base_point ELSE 0 END) AS ダマ和了点合計,
+        SUM(CASE WHEN rs.is_loser = 1 AND rc.has_riichi_player = 1 THEN 1 ELSE 0 END) AS 被リーチ放銃,
+        SUM(CASE WHEN rs.is_loser = 1 AND rc.has_riichi_player = 0 AND rc.has_furo_player = 1 THEN 1 ELSE 0 END) AS 被副露放銃,
+        SUM(CASE WHEN rs.is_loser = 1 AND rc.has_riichi_player = 0 AND rc.has_furo_player = 0 THEN 1 ELSE 0 END) AS 被ダマ放銃,
+        SUM(rs.kyotaku_point) AS 供託収支,
+        SUM(rs.penalty_point) AS ノーテン罰符収支,
+        SUM(CASE WHEN r.result_type = 'chombo' AND rs.is_loser = 1 THEN 1 ELSE 0 END) AS チョンボ数
+    FROM round_seats rs
+    JOIN rounds r ON rs.round_id = r.round_id
+    JOIN games g ON r.game_id = g.game_id
+    JOIN members m ON rs.member_id = m.member_id
+    JOIN round_context rc ON rs.round_id = rc.round_id
+    {where_str}
+    GROUP BY rs.member_id, m.member_name
+    """
+    with _db() as conn:
+        df_raw = _fetch_df(conn, query, tuple(params))
+        if df_raw.empty:
+            return pd.DataFrame(), 0
+
+        # 比率・平均値計算
+        rows = []
+        for _, d in df_raw.iterrows():
+            k = int(d["局数"])
+            if k == 0:
+                continue
+            w_c = int(d["和了"])
+            h_c = int(d["放銃"])
+            r_c = int(d["リーチ"])
+            f_c = int(d["副露"])
+            l_c = int(d["流局"])
+            tsumo_c = int(d["ツモ"])
+            r_w_c = int(d["リーチ後和了"])
+            f_w_c = int(d["副露和了"])
+            d_w_c = int(d["ダマ和了"])
+
+            avg_win = round(d["和了点合計"] / w_c) if w_c else 0
+            avg_lose = round(d["放銃点合計"] / h_c) if h_c else 0
+
+            row = {
+                "名前": d["名前"],
+                "局数": k,
+                "和了率": round(w_c / k * 100, 1),
+                "ツモ率": round(tsumo_c / w_c * 100, 1) if w_c else 0.0,
+                "放銃率": round(h_c / k * 100, 1),
+                "和銃差": round((w_c - h_c) / k * 100, 1),
+                "流局時聴牌率": round(int(d["テンパイ"]) / l_c * 100, 1) if l_c > 0 else 0.0,
+                "ノーテン罰符収支": int(d["ノーテン罰符収支"]),
+                "供託収支": int(d["供託収支"]),
+                "副露率": round(f_c / k * 100, 1),
+                "リーチ率": round(r_c / k * 100, 1),
+                "立直和了率": round(r_w_c / r_c * 100, 1) if r_c else 0.0,
+                "立直放銃率": round(int(d["リーチ後放銃"]) / r_c * 100, 1) if r_c else 0.0,
+                "副露和了率": round(f_w_c / f_c * 100, 1) if f_c else 0.0,
+                "副露放銃率": round(int(d["副露放銃"]) / f_c * 100, 1) if f_c else 0.0,
+                "ダマ和了率": round(d_w_c / w_c * 100, 1) if w_c else 0.0,
+                "被リーチ放銃率": round(int(d["被リーチ放銃"]) / h_c * 100, 1) if h_c else 0.0,
+                "被副露放銃率": round(int(d["被副露放銃"]) / h_c * 100, 1) if h_c else 0.0,
+                "被ダマ放銃率": round(int(d["被ダマ放銃"]) / h_c * 100, 1) if h_c else 0.0,
+                "平均和了": avg_win,
+                "平均放銃": avg_lose,
+                "立直平均打点": round(d["立直和了点合計"] / r_w_c) if r_w_c else 0,
+                "副露平均打点": round(d["副露和了点合計"] / f_w_c) if f_w_c else 0,
+                "ダマ平均打点": round(d["ダマ和了点合計"] / d_w_c) if d_w_c else 0,
+                "打点効率": round(avg_win / avg_lose, 2) if (avg_win and avg_lose) else 0.0,
+            }
+            if int(d["チョンボ数"]) > 0:
+                row["チョンボ数"] = int(d["チョンボ数"])
+            rows.append(row)
+
+        # 対象となった試合数を取得
+        gid_query = f"""
+        SELECT COUNT(DISTINCT r.game_id)
+        FROM rounds r
+        JOIN games g ON r.game_id = g.game_id
+        {where_str}
+        """
+        c = conn.cursor()
+        c.execute(gid_query, tuple(params))
+        n_round_games = c.fetchone()[0] or 0
+
+        return pd.DataFrame(rows), n_round_games
