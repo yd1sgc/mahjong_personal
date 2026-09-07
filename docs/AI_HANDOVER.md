@@ -15,12 +15,21 @@
    - `tests/test_interruption_recovery.py` がこれらを自動検証しているため、対局状態や画面遷移を変更した際は本テストを絶対に落とさないこと。
 
 # Current Status
-- 対局中のドラフト自動保存脱落バグの修正、復元画面固定、および中断・復帰ライフサイクルテスト（全38件）の配備完了。
+- 新DB構造（第3正規形・UUID v7・完全縦持ち）への移行ブランチ `feature/app-v2-migration` を作成。
+- アプリケーション移行仕様書（`docs/APPLICATION_V2_SPECIFICATION.md`）を策定完了。
+  - ハードコード完全排除（ルール完全注入）方針
+  - スパゲッティコード防止のための3層分離設計
+  - 5レイヤーにわたる網羅的テスト計画（ルール計算、保存トランザクション、中断復元、SQL回帰、実データ監査）を明記。
 
 # TODO (Next Actions)
-- [ ] 今後タスクが発生した場合はここに記述する
+- [ ] Phase 1: `src/database2.py` を新DB構造（UUID v7、`games`・`game_participants`・`rounds`・`round_seats`）専用に刷新（旧横持ち・カンマ区切りコードの全削除）
+- [ ] Phase 2: `src/game_logic.py` および対局画面（`src/views/game.py`）の `round_seats` 保存・中断復元対応
+- [ ] Phase 3: `src/views/stats.py` の集計ロジックを正規化SQLクエリへ全面置換
+- [ ] Phase 4: `tests/test_interruption_recovery.py` 等の全テスト通過検証
+- [ ] Phase 5: リモートDB（Supabase）向けの追従マイグレーション実施
 
 # Changelog (Recent History)
+- 2026-09-07: 新DB構造（local_mahjong_v2_new.db）対応ブランチ `feature/app-v2-migration` を作成し、アプリ全面刷新仕様書 `docs/APPLICATION_V2_SPECIFICATION.md` を策定。
 - 2026-09-05: 対局進行中にドラフト自動保存が呼ばれずデータ消失する不具合を修正。全アクション（リーチ・副露・和了・流局・チョンボ・Undo・修正）での保存トリガー、およびドラフト復元時の `normal` 画面固定・カスタムルール保持を実装。対局中断復元テスト（`tests/test_interruption_recovery.py`）を新設。
 - 2026-08-25: AIエージェント用のプロジェクト固有ルール（`.gemini/rules/user_global.md`）の動作緩和と、重要操作の強制確認フック（`.gemini/hooks.json`, `scripts/safety_hook.py`）を導入。
 - 2026-08-25: テスト用のgame_id 15を削除し、本番データ(元16)を15に繰り上げるDBメンテナンス（Supabase側）を実施。
