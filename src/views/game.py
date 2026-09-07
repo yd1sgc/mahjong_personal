@@ -621,7 +621,9 @@ def show_endgame():
                 player_was_group_member=player_was_group_member,
                 date_str=date_str
             )
+            payload["sync_target"] = int(st.session_state.get("sync_target", 1))
             game_id = db.save_game_record(payload)
+
             st.cache_data.clear()
 
             result_rows = []

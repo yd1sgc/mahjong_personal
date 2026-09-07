@@ -82,95 +82,89 @@ def show_data_manage():
 
     with tab3:
         st.subheader("データ編集・削除")
-        df_games = db.load_all_games()
+        df_games = db.get_games_data()
         if df_games.empty:
             st.info("記録がありません。")
         else:
             def game_label(row):
-                return f"#{int(row['game_id'])} {row['date']}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
+                gid_short = str(row['game_id'])[:8]
+                d = row.get('date', '')
+                d_str = d.strftime('%Y-%m-%d') if pd.notna(d) and hasattr(d, 'strftime') else str(d)[:10]
+                return f"[{gid_short}] {d_str}  {row['p1_name']}/{row['p2_name']}/{row['p3_name']}/{row['p4_name']}"
 
-            options = {int(r['game_id']): game_label(r) for _, r in df_games.iterrows()}
+            options = {r['game_id']: game_label(r) for _, r in df_games.iterrows()}
             sel_id = st.selectbox("対象の試合を選択してください", list(options.keys()),
                                   format_func=lambda x: options[x], key="edit_dm_game_id")
 
             action_mode = st.radio(
                 "操作項目を選択",
-                ["① 最終スコア直接修正", "② 各局の詳細修正", "③ 試合データの削除"],
+                ["① 試合データの削除"],
                 horizontal=True,
                 key="dm_action_mode"
             )
 
-            st.divider()
+            row = df_games[df_games['game_id'] == sel_id].iloc[0]
 
-            if action_mode == "① 最終スコア直接修正":
-                st.caption("最終結果のスコア（点数）を直接入力して修正します。合計100,000点が必要です。")
-                row = df_games[df_games['game_id'] == sel_id].iloc[0]
-                new_scores = {}
-                for i in range(1, 5):
-                    name = row[f'p{i}_name']
-                    new_scores[name] = st.number_input(
-                        name, value=int(row[f'p{i}_score']), step=100, key=f"edit_score_{i}"
-                    )
-                total = sum(new_scores.values())
-                ok = (total == 100000)
-                st.caption(f"合計: {total:,}点")
-                if st.button("スコアを保存", type="primary", disabled=not ok, use_container_width=True):
-                    db.update_game_scores(sel_id, new_scores)
-                    st.cache_data.clear()
-                    st.success("スコアを保存しました。")
-                    st.rerun()
-
-            elif action_mode == "② 各局の詳細修正":
-                st.caption("特定局の和了者・放銃者・点数等を修正します。最終スコアにも差分が自動反映されます。")
-                show_round_edit(selected_game_id=sel_id)
-
-            elif action_mode == "③ 試合データの削除":
-                st.caption("この試合のデータを完全に削除します。")
-                row = df_games[df_games['game_id'] == sel_id].iloc[0]
+            if action_mode == "① 試合データの削除":
+                st.warning("⚠️ この試合をローカル端末から削除します。（※オンラインにバックアップがある場合、オンライン側のデータは保護されます）")
                 for i in range(1, 5):
                     rank = int(row.get(f'p{i}_rank', i))
                     st.write(f"{rank}位: {row[f'p{i}_name']}  {int(row[f'p{i}_score']):,}点")
+                
+                short_id = str(sel_id)[:8]
                 confirm_input = st.text_input(
-                    f"削除確認：ゲームID「{int(sel_id)}」を入力してください",
-                    placeholder=str(int(sel_id)), key="del_confirm_id"
+                    f"削除確認：ID先頭8文字「{short_id}」を入力してください",
+                    placeholder=short_id, key="del_confirm_id"
                 )
-                confirmed = confirm_input.strip() == str(int(sel_id))
-                if st.button("この試合を削除する", type="primary",
+                confirmed = confirm_input.strip() == short_id
+                if st.button("この試合をローカルから削除する", type="primary",
                              disabled=not confirmed, use_container_width=True):
-                    db.delete_game(int(sel_id))
+                    db.delete_game(str(sel_id))
                     st.cache_data.clear()
-                    st.success(f"Game #{sel_id} を削除しました。")
+                    st.success(f"Game [{short_id}] をローカルから削除しました。")
                     st.rerun()
 
     with tab4:
-        st.subheader("Supabaseへの同期")
+        st.subheader("オンライン（Supabase）との双方向同期")
         if not db.IS_LOCAL:
-            st.info("同期機能はローカル起動時のみ使用できます。")
+            st.info("同期機能はローカル端末での起動時のみ使用できます。")
         else:
-            pending_now = db.get_pending_count()
-            if pending_now == 0:
-                st.success("未同期のデータはありません。")
-            else:
-                st.warning(f"未同期の試合: {pending_now}件")
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.session_state.get("online", True):
-                        if st.button("今すぐ同期する", type="primary", use_container_width=True):
-                            try:
-                                n = db.sync_to_supabase()
-                                st.cache_data.clear()
-                                st.success(f"{n}件の試合をSupabaseに同期しました。")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"同期に失敗しました: {e}")
-                    else:
-                        st.info("オンラインになってから同期してください。")
-                with c2:
-                    if st.button("送信せずに完了扱いにする（スキップ）", use_container_width=True):
-                        db.mark_as_synced()
+            status = db.get_sync_status_summary()
+            pending_push = status.get("pending_push", 0)
+            local_only = status.get("local_only", 0)
+            synced = status.get("synced", 0)
+
+            c_s1, c_s2, c_s3 = st.columns(3)
+            with c_s1:
+                st.metric("オンライン未送信", f"{pending_push}件")
+            with c_s2:
+                st.metric("ローカル限定", f"{local_only}件")
+            with c_s3:
+                st.metric("同期済み", f"{synced}件")
+
+            st.caption("※メンバー・グループ・ルールは常に双方向で自動マージされます。オンライン上の対局はすべてローカルへ取り込まれます。")
+
+            st.divider()
+
+            if st.session_state.get("online", True):
+                if st.button("🔄 今すぐ全体同期を実行する（Pull & Push）", type="primary", use_container_width=True):
+                    try:
+                        res = db.sync_all()
                         st.cache_data.clear()
-                        st.success("未同期のデータを送信スキップ（完了扱い）にしました。")
+                        st.success(f"同期完了！ オンラインから {res.get('pulled', 0)}件 取得、オンラインへ {res.get('pushed', 0)}件 送信しました。")
                         st.rerun()
+                    except Exception as e:
+                        st.error(f"同期に失敗しました: {e}")
+            else:
+                st.info("オンライン接続時に同期を実行してください。")
+
+            if pending_push > 0:
+                if st.button("未送信データを送信スキップ（完了扱い）にする", use_container_width=True):
+                    db.mark_as_synced()
+                    st.cache_data.clear()
+                    st.success("未送信データを送信完了扱いに更新しました。")
+                    st.rerun()
+
 
 
     st.button("戻る", use_container_width=True, on_click=_set_view, args=("setup",))

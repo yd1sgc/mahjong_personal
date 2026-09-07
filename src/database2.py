@@ -27,11 +27,12 @@ def init_config(is_local=False, sqlite_path=None, remote_db_kwargs=None):
 
 
 def generate_uuid7() -> str:
-    """ミリ秒タイムスタンプベースの UUID v7 (36文字文字列) を生成する。"""
+    """ミリ秒タイムスタンプベースの UUID v7 (36文字文字列: 8-4-4-4-12) を生成する。"""
     ts = int(time.time() * 1000)
     ts_hex = f"{ts:012x}"
     rand_hex = os.urandom(10).hex()
-    return f"{ts_hex[:8]}-{ts_hex[8:12]}-7{rand_hex[:3]}-8{rand_hex[3:6]}-{rand_hex[6:]}"
+    return f"{ts_hex[:8]}-{ts_hex[8:12]}-7{rand_hex[:3]}-8{rand_hex[3:6]}-{rand_hex[6:18]}"
+
 
 
 def get_local_connection():
@@ -107,8 +108,14 @@ def _fetch_df(conn, query, params=None):
 #  不可分トランザクション対局保存API
 # ==============================================================================
 
-def save_game_record(game_data: dict, local=None) -> str:
+def save_game_record(game_data: dict, participants: list = None, rounds: list = None, local=None) -> str:
     """対局ヘッダ、参加者4名、局データ、局座席データを不可分に一括保存する。"""
+    if participants is not None:
+        game_data = dict(game_data)
+        game_data["participants"] = participants
+        if rounds is not None:
+            game_data["rounds"] = rounds
+
     game_id = game_data.get("game_id") or generate_uuid7()
     played_at = game_data.get("played_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     group_id = game_data.get("group_id")
@@ -116,11 +123,12 @@ def save_game_record(game_data: dict, local=None) -> str:
     rule_cfg = game_data.get("rule_config_snapshot", {})
     rule_cfg_str = json.dumps(rule_cfg, ensure_ascii=False) if isinstance(rule_cfg, dict) else str(rule_cfg)
     game_mode = game_data.get("game_mode", "detail")
-    participants = game_data.get("participants", [])
-    rounds = game_data.get("rounds", [])
+    parts = game_data.get("participants", [])
+    rounds_list = game_data.get("rounds", [])
 
-    if len(participants) != 4:
-        raise ValueError(f"対局参加者は4名必須です (現在: {len(participants)}名)")
+    if len(parts) != 4:
+        raise ValueError(f"対局参加者は4名必須です (現在: {len(parts)}名)")
+
 
     use_local = IS_LOCAL if local is None else local
     ph = "?" if use_local else "%s"
@@ -129,41 +137,59 @@ def save_game_record(game_data: dict, local=None) -> str:
 
         c = conn.cursor()
 
+        sync_target = int(game_data.get("sync_target", 1))
+
         # 1. games テーブルへの INSERT
         c.execute(f"""
             INSERT INTO games (
                 game_id, played_at, group_id, rule_name_snapshot,
-                rule_config_snapshot, game_mode, is_synced
-            ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-        """, (game_id, played_at, group_id, rule_name_snap, rule_cfg_str, game_mode, 0 if IS_LOCAL else 1))
+                rule_config_snapshot, game_mode, sync_target, is_synced
+            ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+        """, (game_id, played_at, group_id, rule_name_snap, rule_cfg_str, game_mode, sync_target, 0 if IS_LOCAL else 1))
+
 
         # 2. game_participants テーブルへの INSERT (4行)
-        for p in participants:
+        for idx, p in enumerate(parts):
+            seat_num = int(p.get("seat", idx + 1))
+            mid = str(p.get("member_id", ""))
+            pname = p.get("player_name_snapshot") or p.get("name") or mid or f"P{seat_num}"
+            fscore = int(p.get("final_score", p.get("score", 25000)))
+            rnk = int(p.get("rank", idx + 1))
+            pt_val = float(p.get("point", p.get("pt", 0.0)))
+            was_mem = int(p.get("was_group_member", 1))
+
             c.execute(f"""
                 INSERT INTO game_participants (
                     game_id, seat, member_id, player_name_snapshot,
                     final_score, rank, point, was_group_member
                 ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
             """, (
-                game_id, p["seat"], p["member_id"], p["player_name_snapshot"],
-                int(p["final_score"]), int(p["rank"]), float(p["point"]), int(p.get("was_group_member", 1))
+                game_id, seat_num, mid, pname,
+                fscore, rnk, pt_val, was_mem
             ))
 
+
         # 3. rounds / round_seats テーブルへの INSERT (詳細対局時)
-        if game_mode == "detail" and rounds:
-            for r in rounds:
+        if game_mode == "detail" and rounds_list:
+            for r_idx, r in enumerate(rounds_list):
+
                 round_id = r.get("round_id") or generate_uuid7()
+                r_num = int(r.get("round_index", r.get("round_number", r_idx + 1)))
+                k_name = r.get("kyoku_name") or f"第{r_idx + 1}局"
+                res_type = r.get("result_type", "ron")
+
                 c.execute(f"""
                     INSERT INTO rounds (
                         round_id, game_id, round_index, kyoku_name,
                         honba, riichi_sticks, result_type
                     ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
                 """, (
-                    round_id, game_id, int(r["round_index"]), r["kyoku_name"],
-                    int(r.get("honba", 0)), int(r.get("riichi_sticks", 0)), r["result_type"]
+                    round_id, game_id, r_num, k_name,
+                    int(r.get("honba", 0)), int(r.get("riichi_sticks", 0)), res_type
                 ))
 
-                for s in r.get("seats", []):
+                for s_idx, s in enumerate(r.get("seats", [])):
+                    seat_val = int(s.get("seat", s_idx + 1))
                     c.execute(f"""
                         INSERT INTO round_seats (
                             round_id, seat, member_id, base_point, honba_point,
@@ -171,7 +197,7 @@ def save_game_record(game_data: dict, local=None) -> str:
                             han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
                         ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
                     """, (
-                        round_id, int(s["seat"]), s["member_id"],
+                        round_id, seat_val, s["member_id"],
                         int(s.get("base_point", 0)), int(s.get("honba_point", 0)),
                         int(s.get("kyotaku_point", 0)), int(s.get("penalty_point", 0)),
                         int(s.get("score_delta", 0)), int(s.get("chip_delta", 0)),
@@ -180,6 +206,7 @@ def save_game_record(game_data: dict, local=None) -> str:
                         int(s.get("is_riichi", 0)), int(s.get("is_furo", 0)),
                         int(s.get("is_tenpai", 0))
                     ))
+
 
     return game_id
 
@@ -421,7 +448,18 @@ def save_group(group_id: str, group_name: str, default_rule_id: str, member_ids:
     return gid
 
 
+def add_group(group_name: str, default_rule_id: str = "m_league", member_ids: list = None) -> str:
+    """グループを新規作成するショートハンド関数。"""
+    return save_group(
+        group_id=None,
+        group_name=group_name,
+        default_rule_id=default_rule_id,
+        member_ids=member_ids or []
+    )
+
+
 def archive_group(group_id: str):
+
     """グループをアーカイブする。"""
     ph = "?" if IS_LOCAL else "%s"
     with _db() as conn:
@@ -618,8 +656,10 @@ def init_local_db():
             rule_name_snapshot TEXT NOT NULL,
             rule_config_snapshot TEXT NOT NULL,
             game_mode TEXT NOT NULL DEFAULT 'detail',
+            sync_target INTEGER NOT NULL DEFAULT 1,
             is_synced INTEGER NOT NULL DEFAULT 0
         );
+
         CREATE TABLE IF NOT EXISTS game_participants (
             game_id TEXT NOT NULL,
             seat INTEGER NOT NULL,
@@ -669,6 +709,12 @@ def init_local_db():
             value TEXT NOT NULL
         );
         """)
+        # 既存 games テーブルへの sync_target カラム追加確認
+        c.execute("PRAGMA table_info(games)")
+        cols = [r[1] for r in c.fetchall()]
+        if "sync_target" not in cols:
+            c.execute("ALTER TABLE games ADD COLUMN sync_target INTEGER NOT NULL DEFAULT 1")
+
 
 
 def migrate_local_identity_schema(conn=None):
@@ -750,35 +796,357 @@ def save_round(game_id, kyoku_name, winner, loser, score, furo=None, riichi=None
 
 
 # ==============================================================================
-#  同期・ステータス管理API
+#  分散ハイブリッド同期API（選択的Push & 全件Pull & マスタ双方向同期）
 # ==============================================================================
 
+def get_sync_status_summary():
+    """同期状況のサマリー（未送信対象数、ローカル限定数、同期済み数）を取得する。"""
+    if not IS_LOCAL:
+        return {"pending_push": 0, "local_only": 0, "synced": 0}
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM games WHERE sync_target = 1 AND is_synced = 0")
+        pending_push = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM games WHERE sync_target = 0")
+        local_only = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM games WHERE is_synced = 1")
+        synced = c.fetchone()[0]
+        return {
+            "pending_push": pending_push,
+            "local_only": local_only,
+            "synced": synced
+        }
+
+
+def set_game_sync_target(game_id: str, sync_target: int):
+    """対局のオンライン同期対象フラグ（1: 同期する, 0: ローカル限定）を更新する。"""
+    if not IS_LOCAL:
+        return
+    with _local_db() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE games SET sync_target = ? WHERE game_id = ?", (int(sync_target), game_id))
+
+
 def get_pending_count():
+    """未同期の対象対局数を取得する。"""
     if not IS_LOCAL:
         return 0
     with _local_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM games WHERE is_synced = 0")
+        c.execute("SELECT COUNT(*) FROM games WHERE sync_target = 1 AND is_synced = 0")
         return c.fetchone()[0]
 
 
 def get_local_unsynced_games():
+    """未同期かつ同期対象のローカル対局一覧を取得する。"""
     if not IS_LOCAL:
         return pd.DataFrame()
     with _local_db() as conn:
-        return _fetch_df(conn, "SELECT * FROM games WHERE is_synced = 0 ORDER BY played_at DESC")
+        return _fetch_df(conn, "SELECT * FROM games WHERE sync_target = 1 AND is_synced = 0 ORDER BY played_at DESC")
 
 
 def mark_as_synced(game_id=None):
+    """ローカル対局を同期済みに更新する。"""
     if not IS_LOCAL:
         return
-    ph = "?"
     with _local_db() as conn:
         c = conn.cursor()
         if game_id:
-            c.execute(f"UPDATE games SET is_synced = 1 WHERE game_id = {ph}", (game_id,))
+            c.execute("UPDATE games SET is_synced = 1 WHERE game_id = ?", (game_id,))
         else:
-            c.execute("UPDATE games SET is_synced = 1")
+            c.execute("UPDATE games SET is_synced = 1 WHERE sync_target = 1")
+
+
+def sync_masters():
+    """マスタデータ（members, groups, memberships, rule_templates）の双方向マージを行う。"""
+    if not IS_LOCAL:
+        return {"members": 0, "groups": 0, "rules": 0}
+
+    with _local_db() as l_conn, _remote_db() as r_conn:
+        lc = l_conn.cursor()
+        rc = r_conn.cursor()
+
+        # 1. members マージ
+        lc.execute("SELECT member_id, member_name, is_guest, is_archived, created_at FROM members")
+        l_mems = lc.fetchall()
+        for m in l_mems:
+            rc.execute("""
+                INSERT INTO members (member_id, member_name, is_guest, is_archived, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (member_id) DO UPDATE SET
+                    member_name = EXCLUDED.member_name,
+                    is_archived = EXCLUDED.is_archived
+            """, m)
+
+        rc.execute("SELECT member_id, member_name, is_guest, is_archived, created_at FROM members")
+        for m in rc.fetchall():
+            lc.execute("""
+                INSERT INTO members (member_id, member_name, is_guest, is_archived, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (member_id) DO UPDATE SET
+                    member_name = excluded.member_name,
+                    is_archived = excluded.is_archived
+            """, m)
+
+        # 2. groups マージ
+        lc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
+        for g in lc.fetchall():
+            rc.execute("""
+                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (group_id) DO UPDATE SET
+                    group_name = EXCLUDED.group_name,
+                    default_rule_id = EXCLUDED.default_rule_id,
+                    is_archived = EXCLUDED.is_archived
+            """, g)
+
+        rc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
+        for g in rc.fetchall():
+            lc.execute("""
+                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (group_id) DO UPDATE SET
+                    group_name = excluded.group_name,
+                    default_rule_id = excluded.default_rule_id,
+                    is_archived = excluded.is_archived
+            """, g)
+
+        # 3. group_memberships マージ
+        lc.execute("SELECT group_id, member_id, joined_at FROM group_memberships")
+        for gm in lc.fetchall():
+            rc.execute("""
+                INSERT INTO group_memberships (group_id, member_id, joined_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (group_id, member_id) DO NOTHING
+            """, gm)
+
+        rc.execute("SELECT group_id, member_id, joined_at FROM group_memberships")
+        for gm in rc.fetchall():
+            lc.execute("""
+                INSERT INTO group_memberships (group_id, member_id, joined_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (group_id, member_id) DO NOTHING
+            """, gm)
+
+        # 4. rule_templates マージ
+        lc.execute("SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates")
+        for r in lc.fetchall():
+            cfg_val = r[4] if isinstance(r[4], str) else json.dumps(r[4], ensure_ascii=False)
+            rc.execute("""
+                INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (rule_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    config_json = EXCLUDED.config_json,
+                    is_archived = EXCLUDED.is_archived
+            """, (r[0], r[1], r[2], r[3], cfg_val, r[5]))
+
+        rc.execute("SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates")
+        for r in rc.fetchall():
+            cfg_val = json.dumps(r[4], ensure_ascii=False) if isinstance(r[4], dict) else str(r[4])
+            lc.execute("""
+                INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (rule_id) DO UPDATE SET
+                    name = excluded.name,
+                    config_json = excluded.config_json,
+                    is_archived = excluded.is_archived
+            """, (r[0], r[1], r[2], r[3], cfg_val, r[5]))
+
+        r_conn.commit()
+
+
+def pull_games_from_remote():
+    """リモートにあってローカルに存在しない対局を全件取得してローカルへ保存する（バックアップ復元）。"""
+    if not IS_LOCAL:
+        return 0
+
+    pulled_count = 0
+    with _local_db() as l_conn, _remote_db() as r_conn:
+        lc = l_conn.cursor()
+        rc = r_conn.cursor()
+
+        # ローカルに存在する全対局ID
+        lc.execute("SELECT game_id FROM games")
+        local_ids = set(r[0] for r in lc.fetchall())
+
+        # リモートの対局一覧
+        rc.execute("SELECT game_id, played_at, group_id, rule_name_snapshot, rule_config_snapshot, game_mode FROM games")
+        remote_games = rc.fetchall()
+
+        for g in remote_games:
+            gid = str(g[0])
+            if gid in local_ids:
+                continue
+
+            played_at = str(g[1])
+            grp_id = g[2]
+            r_snap = g[3]
+            r_cfg = json.dumps(g[4], ensure_ascii=False) if isinstance(g[4], dict) else str(g[4])
+            mode = g[5]
+
+            # participants 取得
+            rc.execute("""
+                SELECT seat, member_id, player_name_snapshot, final_score, rank, point, was_group_member
+                FROM game_participants WHERE game_id = %s ORDER BY seat
+            """, (gid,))
+            parts = rc.fetchall()
+
+            # rounds 取得
+            rc.execute("""
+                SELECT round_id, round_index, kyoku_name, honba, riichi_sticks, result_type
+                FROM rounds WHERE game_id = %s ORDER BY round_index
+            """, (gid,))
+            rounds = rc.fetchall()
+
+            # ローカルへ不可分保存 (sync_target=1, is_synced=1)
+            lc.execute("""
+                INSERT INTO games (
+                    game_id, played_at, group_id, rule_name_snapshot,
+                    rule_config_snapshot, game_mode, sync_target, is_synced
+                ) VALUES (?, ?, ?, ?, ?, ?, 1, 1)
+            """, (gid, played_at, grp_id, r_snap, r_cfg, mode))
+
+            for p in parts:
+                lc.execute("""
+                    INSERT INTO game_participants (
+                        game_id, seat, member_id, player_name_snapshot,
+                        final_score, rank, point, was_group_member
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (gid, p[0], str(p[1]), p[2], p[3], p[4], p[5], p[6]))
+
+            for r in rounds:
+                rid = str(r[0])
+                lc.execute("""
+                    INSERT INTO rounds (
+                        round_id, game_id, round_index, kyoku_name,
+                        honba, riichi_sticks, result_type
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (rid, gid, r[1], r[2], r[3], r[4], r[5]))
+
+                # round_seats 取得・保存
+                rc.execute("""
+                    SELECT seat, member_id, base_point, honba_point, kyotaku_point,
+                           penalty_point, score_delta, chip_delta, han, fu,
+                           is_winner, is_loser, is_riichi, is_furo, is_tenpai
+                    FROM round_seats WHERE round_id = %s ORDER BY seat
+                """, (rid,))
+                for s in rc.fetchall():
+                    lc.execute("""
+                        INSERT INTO round_seats (
+                            round_id, seat, member_id, base_point, honba_point,
+                            kyotaku_point, penalty_point, score_delta, chip_delta,
+                            han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (rid, s[0], str(s[1]), s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
+
+            pulled_count += 1
+
+    return pulled_count
+
+
+def push_games_to_remote(game_ids=None):
+    """ローカルの sync_target = 1 かつ未同期の対局（または指定ID）のみをリモートへ送信する（選択的Push）。"""
+    if not IS_LOCAL:
+        return 0
+
+    pushed_count = 0
+    with _local_db() as l_conn, _remote_db() as r_conn:
+        lc = l_conn.cursor()
+        rc = r_conn.cursor()
+
+        if game_ids:
+            ph_list = ",".join("?" for _ in game_ids)
+            lc.execute(f"SELECT game_id FROM games WHERE game_id IN ({ph_list}) AND sync_target = 1 AND is_synced = 0", tuple(game_ids))
+        else:
+            lc.execute("SELECT game_id FROM games WHERE sync_target = 1 AND is_synced = 0")
+
+        target_gids = [r[0] for r in lc.fetchall()]
+        if not target_gids:
+            return 0
+
+        for gid in target_gids:
+            # 1. games レコード取得
+            lc.execute("SELECT game_id, played_at, group_id, rule_name_snapshot, rule_config_snapshot, game_mode FROM games WHERE game_id = ?", (gid,))
+            g = lc.fetchone()
+            cfg_val = g[4] if isinstance(g[4], str) else json.dumps(g[4], ensure_ascii=False)
+
+            rc.execute("""
+                INSERT INTO games (
+                    game_id, played_at, group_id, rule_name_snapshot,
+                    rule_config_snapshot, game_mode, is_synced
+                ) VALUES (%s, %s, %s, %s, %s, %s, 1)
+                ON CONFLICT (game_id) DO NOTHING
+            """, (g[0], g[1], g[2], g[3], cfg_val, g[5]))
+
+            # 2. participants 取得・送信
+            lc.execute("""
+                SELECT seat, member_id, player_name_snapshot, final_score, rank, point, was_group_member
+                FROM game_participants WHERE game_id = ? ORDER BY seat
+            """, (gid,))
+            for p in lc.fetchall():
+                rc.execute("""
+                    INSERT INTO game_participants (
+                        game_id, seat, member_id, player_name_snapshot,
+                        final_score, rank, point, was_group_member
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (game_id, seat) DO NOTHING
+                """, (gid, p[0], p[1], p[2], p[3], p[4], p[5], p[6]))
+
+            # 3. rounds 取得・送信
+            lc.execute("""
+                SELECT round_id, round_index, kyoku_name, honba, riichi_sticks, result_type
+                FROM rounds WHERE game_id = ? ORDER BY round_index
+            """, (gid,))
+            for r in lc.fetchall():
+                rid = r[0]
+                rc.execute("""
+                    INSERT INTO rounds (
+                        round_id, game_id, round_index, kyoku_name,
+                        honba, riichi_sticks, result_type
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (round_id) DO NOTHING
+                """, (rid, gid, r[1], r[2], r[3], r[4], r[5]))
+
+                # 4. round_seats 取得・送信
+                lc.execute("""
+                    SELECT seat, member_id, base_point, honba_point, kyotaku_point,
+                           penalty_point, score_delta, chip_delta, han, fu,
+                           is_winner, is_loser, is_riichi, is_furo, is_tenpai
+                    FROM round_seats WHERE round_id = ? ORDER BY seat
+                """, (rid,))
+                for s in lc.fetchall():
+                    rc.execute("""
+                        INSERT INTO round_seats (
+                            round_id, seat, member_id, base_point, honba_point,
+                            kyotaku_point, penalty_point, score_delta, chip_delta,
+                            han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (round_id, seat) DO NOTHING
+                    """, (rid, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
+
+            # ローカル側を同期済みに更新
+            lc.execute("UPDATE games SET is_synced = 1 WHERE game_id = ?", (gid,))
+            pushed_count += 1
+
+        r_conn.commit()
+
+    return pushed_count
+
+
+def sync_all():
+    """マスタ同期 → 全件Pull → 選択的Push を順次実行する統合同期関数。"""
+    sync_masters()
+    pulled = pull_games_from_remote()
+    pushed = push_games_to_remote()
+    return {"pulled": pulled, "pushed": pushed}
+
+
+def sync_to_supabase():
+    """下位互換用同期関数。"""
+    res = sync_all()
+    return res.get("pushed", 0)
+
 
 
 # ==============================================================================

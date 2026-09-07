@@ -174,13 +174,16 @@ def show_setup():
 
         st.divider()
 
+    st.markdown("<div style='margin-bottom: 0.5rem;'>", unsafe_allow_html=True)
+    sync_online = st.checkbox(" この対局をオンラインにも同期する", value=True, key="setup_sync_online")
+    st.markdown("</div>", unsafe_allow_html=True)
+
     ready = (st.session_state.selected_group_id != "none") and (len(st.session_state.selected_players) == 4)
     c1, c2 = st.columns(2)
     with c1:
         if st.button("詳細モードで開始", type="primary",
                      disabled=not ready, use_container_width=True):
             selected = st.session_state.selected_players
-            # 選択中のルールの配給原点 (init_score) を使用し、セッションにルール設定を保存
             active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
             init_score_val = active_cfg.get("basic", {}).get("init_score", active_cfg.get("init_score", INIT_SCORE))
             
@@ -192,6 +195,7 @@ def show_setup():
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
             st.session_state.current_rule_config = active_cfg
+            st.session_state.sync_target = 1 if sync_online else 0
             st.session_state.game_active = True
             st.session_state.game_mode = "detail"
             st.session_state.selected_players = []
@@ -208,11 +212,14 @@ def show_setup():
             st.session_state.current_group_id = chosen_group["group_id"]
             st.session_state.current_rule_id = st.session_state.active_rule_id
             st.session_state.current_rule_config = active_cfg
+            st.session_state.sync_target = 1 if sync_online else 0
             st.session_state.game_mode = "simple"
             st.session_state.game_active = True
             st.session_state.selected_players = []
             st.session_state.view = "simple_input"
             game_logic.autosave_draft()
+            st.rerun()
+
             st.rerun()
 
     active_cfg = next((r["config"] for r in all_rules if r["rule_id"] == st.session_state.active_rule_id), {})
@@ -268,7 +275,9 @@ def show_simple_input():
                 player_was_group_member=player_was_group_member,
                 date_str=date_str
             )
+            payload["sync_target"] = int(st.session_state.get("sync_target", 1))
             game_id = db.save_game_record(payload)
+
             st.cache_data.clear()
 
             result_rows = [
