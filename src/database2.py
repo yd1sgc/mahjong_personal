@@ -1348,6 +1348,24 @@ def sync_to_supabase():
 #  正規化SQL成績集計API
 # ==============================================================================
 
+def _resolve_rule_filter_names(conn, rule_id: str) -> list:
+    """rule_id または表示名から、一致すべき候補名・IDリストを取得する。"""
+    ph = "?" if IS_LOCAL else "%s"
+    c = conn.cursor()
+    names = {rule_id}
+    # 1. rule_id から name を取得
+    c.execute(f"SELECT name FROM rule_templates WHERE rule_id = {ph}", (rule_id,))
+    row = c.fetchone()
+    if row and row[0]:
+        names.add(row[0])
+    # 2. name から rule_id を逆引き
+    c.execute(f"SELECT rule_id FROM rule_templates WHERE name = {ph}", (rule_id,))
+    row = c.fetchone()
+    if row and row[0]:
+        names.add(row[0])
+    return list(names)
+
+
 def get_game_stats_summary(group_id=None, rule_id=None, year=None, include_guests=True):
     """game_participants と games から試合成績集計 DataFrame を取得する。"""
     ph = "?" if IS_LOCAL else "%s"
@@ -1361,51 +1379,53 @@ def get_game_stats_summary(group_id=None, rule_id=None, year=None, include_guest
     if not include_guests:
         where_clauses.append("m.is_guest = 0")
 
-    if rule_id and rule_id != "all":
-        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
-        params.extend([rule_id, rule_id])
-
     if year and year != "全期間":
         where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
         params.append(str(year))
-
-    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     col_1 = "`1着率`" if IS_LOCAL else '"1着率"'
     col_2 = "`2着率`" if IS_LOCAL else '"2着率"'
     col_3 = "`3着率`" if IS_LOCAL else '"3着率"'
     col_4 = "`4着率`" if IS_LOCAL else '"4着率"'
 
-    query = f"""
-    SELECT 
-        m.member_name AS 名前,
-        COUNT(gp.game_id) AS 試合数,
-        ROUND(SUM(gp.point), 1) AS 総合pt,
-        ROUND(SUM(
-            (gp.final_score - 25000) / 1000.0 + 
-            CASE gp.rank 
-                WHEN 1 THEN 30.0 
-                WHEN 2 THEN 10.0 
-                WHEN 3 THEN -10.0 
-                WHEN 4 THEN -30.0 
-                ELSE 0.0 
-            END
-        ), 1) AS オカなし総合pt,
-        ROUND(AVG(gp.rank), 2) AS 平均順位,
-        ROUND(SUM(CASE WHEN gp.rank <= 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS 連対率,
-        ROUND(SUM(CASE WHEN gp.rank <= 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS ラス回避率,
-        ROUND(SUM(CASE WHEN gp.rank = 1 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_1},
-        ROUND(SUM(CASE WHEN gp.rank = 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_2},
-        ROUND(SUM(CASE WHEN gp.rank = 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_3},
-        ROUND(SUM(CASE WHEN gp.rank = 4 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_4}
-    FROM game_participants gp
-    JOIN games g ON gp.game_id = g.game_id
-    JOIN members m ON gp.member_id = m.member_id
-    {where_str}
-    GROUP BY gp.member_id, m.member_name
-    ORDER BY 総合pt DESC
-    """
     with _db() as conn:
+        if rule_id and rule_id != "all":
+            rule_cands = _resolve_rule_filter_names(conn, rule_id)
+            ph_rules = ",".join(ph for _ in rule_cands)
+            where_clauses.append(f"g.rule_name_snapshot IN ({ph_rules})")
+            params.extend(rule_cands)
+
+        where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        query = f"""
+        SELECT 
+            m.member_name AS 名前,
+            COUNT(gp.game_id) AS 試合数,
+            ROUND(SUM(gp.point), 1) AS 総合pt,
+            ROUND(SUM(
+                (gp.final_score - 25000) / 1000.0 + 
+                CASE gp.rank 
+                    WHEN 1 THEN 30.0 
+                    WHEN 2 THEN 10.0 
+                    WHEN 3 THEN -10.0 
+                    WHEN 4 THEN -30.0 
+                    ELSE 0.0 
+                END
+            ), 1) AS オカなし総合pt,
+            ROUND(AVG(gp.rank), 2) AS 平均順位,
+            ROUND(SUM(CASE WHEN gp.rank <= 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS 連対率,
+            ROUND(SUM(CASE WHEN gp.rank <= 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS ラス回避率,
+            ROUND(SUM(CASE WHEN gp.rank = 1 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_1},
+            ROUND(SUM(CASE WHEN gp.rank = 2 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_2},
+            ROUND(SUM(CASE WHEN gp.rank = 3 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_3},
+            ROUND(SUM(CASE WHEN gp.rank = 4 THEN 1.0 ELSE 0.0 END) / COUNT(gp.game_id) * 100, 1) AS {col_4}
+        FROM game_participants gp
+        JOIN games g ON gp.game_id = g.game_id
+        JOIN members m ON gp.member_id = m.member_id
+        {where_str}
+        GROUP BY gp.member_id, m.member_name
+        ORDER BY 総合pt DESC
+        """
         return _fetch_df(conn, query, tuple(params))
 
 
@@ -1422,31 +1442,33 @@ def get_results_data(group_id=None, rule_id=None, year=None, include_guests=True
     if not include_guests:
         where_clauses.append("m.is_guest = 0")
 
-    if rule_id and rule_id != "all":
-        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
-        params.extend([rule_id, rule_id])
-
     if year and year != "全期間":
         where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
         params.append(str(year))
 
-    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-
-    query = f"""
-    SELECT 
-        gp.game_id,
-        g.played_at AS date,
-        m.member_name AS name,
-        gp.final_score AS score,
-        gp.rank,
-        gp.point AS pt
-    FROM game_participants gp
-    JOIN games g ON gp.game_id = g.game_id
-    JOIN members m ON gp.member_id = m.member_id
-    {where_str}
-    ORDER BY g.played_at ASC, gp.game_id ASC, gp.rank ASC
-    """
     with _db() as conn:
+        if rule_id and rule_id != "all":
+            rule_cands = _resolve_rule_filter_names(conn, rule_id)
+            ph_rules = ",".join(ph for _ in rule_cands)
+            where_clauses.append(f"g.rule_name_snapshot IN ({ph_rules})")
+            params.extend(rule_cands)
+
+        where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        query = f"""
+        SELECT 
+            gp.game_id,
+            g.played_at AS date,
+            m.member_name AS name,
+            gp.final_score AS score,
+            gp.rank,
+            gp.point AS pt
+        FROM game_participants gp
+        JOIN games g ON gp.game_id = g.game_id
+        JOIN members m ON gp.member_id = m.member_id
+        {where_str}
+        ORDER BY g.played_at ASC, gp.game_id ASC, gp.rank ASC
+        """
         df = _fetch_df(conn, query, tuple(params))
         if not df.empty and "date" in df.columns:
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -1466,15 +1488,18 @@ def get_round_stats_summary(group_id=None, rule_id=None, year=None, include_gues
     if not include_guests:
         where_clauses.append("m.is_guest = 0")
 
-    if rule_id and rule_id != "all":
-        where_clauses.append(f"(g.rule_id = {ph} OR g.rule_name_snapshot = {ph})")
-        params.extend([rule_id, rule_id])
-
     if year and year != "全期間":
         where_clauses.append(f"strftime('%Y', g.played_at) = {ph}" if IS_LOCAL else f"EXTRACT(YEAR FROM g.played_at) = {ph}")
         params.append(str(year))
 
-    where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    with _db() as conn:
+        if rule_id and rule_id != "all":
+            rule_cands = _resolve_rule_filter_names(conn, rule_id)
+            ph_rules = ",".join(ph for _ in rule_cands)
+            where_clauses.append(f"g.rule_name_snapshot IN ({ph_rules})")
+            params.extend(rule_cands)
+
+        where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     # 放銃時の相手立直・副露判定のため、各 round_id における立直者・副露者の存在を集計してサブクエリ結合
     query = f"""
