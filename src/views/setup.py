@@ -143,7 +143,7 @@ def show_setup():
             display_members = [m["member_name"] for m in all_members] if show_all else target_members_names
 
         # ID表記付きマップ
-        mem_id_map = {m["member_name"]: f"#{m['member_id']:02d}" for m in all_members}
+        mem_id_map = {m["member_name"]: f"#{m.get('display_no', idx):02d}" for idx, m in enumerate(all_members, 1)}
 
         grid = st.columns(2)
         for i, m in enumerate(display_members):

@@ -57,7 +57,7 @@ def show_group_manage():
         selected_members_new = []
         m_cols1 = st.columns(2)
         for i, m in enumerate(all_members):
-            m_label = f"#{m['member_id']:02d} {m['member_name']}"
+            m_label = f"#{m.get('display_no', i+1):02d} {m['member_name']}"
             with m_cols1[i % 2]:
                 if st.checkbox(m_label, key=f"t1_mem_{m['member_id']}"):
                     selected_members_new.append(m["member_id"])
@@ -167,7 +167,7 @@ def show_group_manage():
                 selected_mems_edit = []
                 m_cols2 = st.columns(2)
                 for i, m in enumerate(all_members):
-                    m_label = f"#{m['member_id']:02d} {m['member_name']}"
+                    m_label = f"#{m.get('display_no', i+1):02d} {m['member_name']}"
                     with m_cols2[i % 2]:
                         if st.checkbox(m_label, value=(m["member_id"] in cur_mems), key=f"t2_emem_{m['member_id']}"):
                             selected_mems_edit.append(m["member_id"])

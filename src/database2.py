@@ -432,14 +432,29 @@ def import_games_from_df(df):
 #  メンバー管理 CRUD
 # ==============================================================================
 
-def get_all_members(include_archived=False):
-    """全メンバー一覧を取得する。"""
-    query = "SELECT * FROM members"
+def get_all_members(include_archived=False) -> list:
+    """全メンバー一覧を辞書リストで取得する。"""
+    query = "SELECT member_id, member_name, is_guest, is_archived FROM members"
     if not include_archived:
         query += " WHERE is_archived = 0"
     query += " ORDER BY member_name"
-    with _db() as conn:
-        return _fetch_df(conn, query)
+    try:
+        with _db() as conn:
+            c = conn.cursor()
+            c.execute(query)
+            rows = c.fetchall()
+            results = []
+            for idx, r in enumerate(rows, 1):
+                results.append({
+                    "member_id": r[0],
+                    "display_no": idx,
+                    "member_name": r[1],
+                    "is_guest": bool(r[2]),
+                    "is_archived": bool(r[3])
+                })
+            return results
+    except Exception:
+        return []
 
 
 def add_member(member_name: str, is_guest=0) -> str:
@@ -576,14 +591,40 @@ def delete_group(group_id: str):
 #  ルールテンプレート CRUD
 # ==============================================================================
 
-def get_rule_templates(include_archived=False):
-    """全ルールテンプレート一覧を取得する。"""
-    query = "SELECT * FROM rule_templates"
+def get_rule_templates(include_archived=False) -> list:
+    """全ルールテンプレート一覧を取得する（辞書リスト）。"""
+    query = "SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates"
     if not include_archived:
         query += " WHERE is_archived = 0"
     query += " ORDER BY kind DESC, name ASC"
-    with _db() as conn:
-        return _fetch_df(conn, query)
+    try:
+        with _db() as conn:
+            c = conn.cursor()
+            c.execute(query)
+            rows = c.fetchall()
+            results = []
+            for r in rows:
+                cfg = r[4]
+                if isinstance(cfg, str):
+                    try:
+                        cfg = json.loads(cfg)
+                    except Exception:
+                        cfg = {}
+                results.append({
+                    "rule_id": r[0],
+                    "rule_name": r[1],
+                    "name": r[1],
+                    "kind": r[2],
+                    "version": r[3],
+                    "config": cfg,
+                    "is_archived": bool(r[5])
+                })
+            return results
+    except Exception:
+        return []
+
+
+get_rules = get_rule_templates
 
 
 def save_custom_rule(rule_id: str, name: str, config: dict) -> str:
