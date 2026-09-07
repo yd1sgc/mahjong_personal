@@ -352,6 +352,82 @@ def get_rounds_data(game_id=None):
         return _fetch_df(conn, query, params)
 
 
+def load_all_rounds():
+    """全局レコードを取得する（CSVエクスポート用）。"""
+    with _db() as conn:
+        return _fetch_df(conn, "SELECT * FROM rounds ORDER BY round_index")
+
+
+def load_rounds_by_game(game_id: str):
+    """指定対局の局データを取得する。"""
+    ph = "?" if IS_LOCAL else "%s"
+    with _db() as conn:
+        return _fetch_df(conn, f"SELECT * FROM rounds WHERE game_id = {ph} ORDER BY round_index", (str(game_id),))
+
+
+def update_round(round_id: str, fields: dict):
+    """指定局レコードの特定フィールドを更新する。"""
+    if not fields:
+        return
+    ph = "?" if IS_LOCAL else "%s"
+    set_clause = ", ".join(f"{k} = {ph}" for k in fields)
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(f"UPDATE rounds SET {set_clause} WHERE round_id = {ph}", list(fields.values()) + [str(round_id)])
+
+
+def update_game_scores(game_id: str, scores_dict: dict):
+    """対局の最終持ち点および順位・ptを更新する。"""
+    from calc import calc_point
+    sorted_p = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
+    name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
+    
+    ph = "?" if IS_LOCAL else "%s"
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(f"SELECT rule_config_snapshot FROM games WHERE game_id = {ph}", (str(game_id),))
+        row = c.fetchone()
+        rule_cfg = {}
+        if row and row[0]:
+            rule_cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            
+        for name, score in scores_dict.items():
+            rank = name_to_rank[name]
+            pt = calc_point(score, rank, rule_cfg) if rule_cfg else 0.0
+            c.execute(f"""
+                UPDATE game_participants 
+                SET final_score = {ph}, rank = {ph}, point = {ph}
+                WHERE game_id = {ph} AND player_name_snapshot = {ph}
+            """, (score, rank, pt, str(game_id), name))
+
+
+def import_games_from_df(df):
+    """CSVから対局データを一括取り込みする。"""
+    count = 0
+    for _, row in df.iterrows():
+        players = [
+            {"seat": 1, "member_id": str(row['p1_name']), "player_name_snapshot": str(row['p1_name']), "final_score": int(row['p1_score']), "rank": 1, "point": 0.0, "was_group_member": 1},
+            {"seat": 2, "member_id": str(row['p2_name']), "player_name_snapshot": str(row['p2_name']), "final_score": int(row['p2_score']), "rank": 2, "point": 0.0, "was_group_member": 1},
+            {"seat": 3, "member_id": str(row['p3_name']), "player_name_snapshot": str(row['p3_name']), "final_score": int(row['p3_score']), "rank": 3, "point": 0.0, "was_group_member": 1},
+            {"seat": 4, "member_id": str(row['p4_name']), "player_name_snapshot": str(row['p4_name']), "final_score": int(row['p4_score']), "rank": 4, "point": 0.0, "was_group_member": 1},
+        ]
+        sorted_p = sorted(players, key=lambda x: x["final_score"], reverse=True)
+        for rank, p in enumerate(sorted_p, 1):
+            p["rank"] = rank
+        game_payload = {
+            "game_id": str(row.get('game_id')) if pd.notna(row.get('game_id')) else generate_uuid7(),
+            "played_at": str(row.get('date', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
+            "rule_name_snapshot": "標準ルール",
+            "rule_config_snapshot": {},
+            "game_mode": "detail",
+            "participants": players,
+            "rounds": []
+        }
+        save_game_record(game_payload)
+        count += 1
+    return count
+
+
 # ==============================================================================
 #  メンバー管理 CRUD
 # ==============================================================================
@@ -410,6 +486,31 @@ def get_group_members(group_id: str) -> list:
         return [r[0] for r in c.fetchall()]
 
 
+def get_groups() -> list:
+    """登録済みグループの一覧を取得する (メンバーIDリスト付き、G01/G02等の表示用ID対応)。"""
+    try:
+        ph = "?" if IS_LOCAL else "%s"
+        with _db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT group_id, group_name, default_rule_id, display_id FROM groups WHERE is_archived = 0 ORDER BY display_id ASC, group_name ASC")
+            group_rows = c.fetchall()
+            groups = []
+            for idx, r in enumerate(group_rows):
+                g_id, g_name, r_id, d_id = r[0], r[1], r[2], r[3]
+                c.execute(f"SELECT member_id FROM group_memberships WHERE group_id = {ph}", (g_id,))
+                members = [m[0] for m in c.fetchall()]
+                groups.append({
+                    "display_id": d_id if d_id else f"G{idx + 1:02d}",
+                    "group_id": g_id,
+                    "group_name": g_name,
+                    "default_rule_id": r_id,
+                    "members": members
+                })
+            return groups
+    except Exception:
+        return []
+
+
 def save_group(group_id: str, group_name: str, default_rule_id: str, member_ids: list, display_id=None) -> str:
     """グループ情報および所属メンバーを一括保存・更新する。"""
     ph = "?" if IS_LOCAL else "%s"
@@ -459,12 +560,16 @@ def add_group(group_name: str, default_rule_id: str = "m_league", member_ids: li
 
 
 def archive_group(group_id: str):
-
     """グループをアーカイブする。"""
     ph = "?" if IS_LOCAL else "%s"
     with _db() as conn:
         c = conn.cursor()
         c.execute(f"UPDATE groups SET is_archived = 1 WHERE group_id = {ph}", (group_id,))
+
+
+def delete_group(group_id: str):
+    """グループを削除（アーカイブ）する下位互換関数。"""
+    archive_group(group_id)
 
 
 # ==============================================================================
