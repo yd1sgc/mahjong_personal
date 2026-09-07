@@ -61,6 +61,9 @@ def calc_special_point(score, rank, rule_config=None, chombo_count=0):
     if ROUND_INTEGER: return int(Decimal(str(total)).quantize(Decimal('0'), rounding=ROUND_HALF_UP))
     else: return round(total, 1)
 
+calc_point = calc_special_point
+
+
 
 def get_chombo_counts(df_rounds):
     counts = {}
