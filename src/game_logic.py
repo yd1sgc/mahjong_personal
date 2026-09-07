@@ -86,15 +86,23 @@ class GameState:
         self.honba = 0
         self.round_idx = 0
 
+        detail_cfg = self.rule_config.get("detail", {})
+        honba_pt = detail_cfg.get("honba_pt", 300)
+        riichi_pt = detail_cfg.get("riichi_pt", 1000)
+
         for r in self.round_history:
             dealer = self.players[self.round_idx % 4]
             wind = ["東", "南", "西"][min(self.round_idx // 4, 2)]
             r["kyoku_name"] = f"{wind}{(self.round_idx % 4) + 1}局"
 
+            # 局開始時の供託本数と本場数を記録
+            r["starting_riichi_sticks"] = self.riichi_stick
+            r["honba"] = self.honba
+
             # リーチ処理
             for p in r.get("riichi", []):
                 if p in self.scores:
-                    self.scores[p] -= 1000
+                    self.scores[p] -= riichi_pt
                     self.riichi_stick += 1
 
             win_type = r.get("win_type", "")
@@ -105,36 +113,37 @@ class GameState:
             dealer_continues = False
 
             if win_type == "ron":
-                total = score + self.honba * 300
+                total = score + self.honba * honba_pt
                 if loser in self.scores:
                     self.scores[loser] -= total
                 if winner in self.scores:
-                    self.scores[winner] += total + self.riichi_stick * 1000
+                    self.scores[winner] += total + self.riichi_stick * riichi_pt
                 self.riichi_stick = 0
                 if winner == dealer:
                     dealer_continues = True
 
             elif win_type == "tsumo":
+                honba_each = self.honba * (honba_pt // 3)
                 if winner == dealer:
-                    each = (score // 3) + self.honba * 100
+                    each = (score // 3) + honba_each
                     for p in self.players:
                         if p != winner:
                             self.scores[p] -= each
                             self.scores[winner] += each
-                    self.scores[winner] += self.riichi_stick * 1000
+                    self.scores[winner] += self.riichi_stick * riichi_pt
                     dealer_continues = True
                 else:
                     base_ko_pay = int(((score / 4) + 99) // 100 * 100)
                     base_oya_pay = score - (base_ko_pay * 2)
-                    oya_pay = base_oya_pay + self.honba * 100
-                    ko_pay = base_ko_pay + self.honba * 100
+                    oya_pay = base_oya_pay + honba_each
+                    ko_pay = base_ko_pay + honba_each
                     for p in self.players:
                         if p == winner:
                             continue
                         pay = oya_pay if p == dealer else ko_pay
                         self.scores[p] -= pay
                         self.scores[winner] += pay
-                    self.scores[winner] += self.riichi_stick * 1000
+                    self.scores[winner] += self.riichi_stick * riichi_pt
                 self.riichi_stick = 0
 
             elif win_type == "ryukyoku":
@@ -142,7 +151,7 @@ class GameState:
                 noten = [p for p in self.players if p not in tenpai]
                 n_t, n_n = len(tenpai), len(noten)
                 if 0 < n_t < 4:
-                    bappu = self.rule_config.get("detail", {}).get("noten_bappu_pt", 3000)
+                    bappu = detail_cfg.get("noten_bappu_pt", 3000)
                     each_noten = bappu // n_n
                     each_tenpai = bappu // n_t
                     for p in noten:
@@ -150,7 +159,7 @@ class GameState:
                     for p in tenpai:
                         self.scores[p] += each_tenpai
                 
-                renchan_rule = self.rule_config.get("detail", {}).get("renchan_rule", "tenpai")
+                renchan_rule = detail_cfg.get("renchan_rule", "tenpai")
                 if renchan_rule == "tenpai":
                     dealer_continues = (dealer in tenpai)
                 elif renchan_rule == "agari":
@@ -160,7 +169,6 @@ class GameState:
 
             elif win_type == "chombo":
                 chombo_p = winner
-                detail_cfg = self.rule_config.get("detail", {})
                 chombo_rule = detail_cfg.get("chombo_rule", "mangan_pay")
                 if chombo_rule == "mangan_pay":
                     m_base = detail_cfg.get("mangan_base_pt", 8000)
@@ -195,7 +203,7 @@ class GameState:
                 
                 for wd in wins_data:
                     w = wd["winner"]
-                    pts = wd["points_data"]["total"] + self.honba * 300
+                    pts = wd["points_data"]["total"] + self.honba * honba_pt
                     if loser in self.scores:
                         self.scores[loser] -= pts
                     if w in self.scores:
@@ -204,7 +212,7 @@ class GameState:
                         is_dealer_won = True
                         
                 if closest_winner in self.scores:
-                    self.scores[closest_winner] += self.riichi_stick * 1000
+                    self.scores[closest_winner] += self.riichi_stick * riichi_pt
                 self.riichi_stick = 0
                 if is_dealer_won:
                     dealer_continues = True
@@ -212,7 +220,7 @@ class GameState:
             elif win_type == "mid_ryukyoku":
                 ryukyoku_type = r.get("ryukyoku_type", "other")
                 dealer_continues = True
-                if ryukyoku_type != "other" and self.rule_config.get("detail", {}).get(ryukyoku_type) == "ryukyoku":
+                if ryukyoku_type != "other" and detail_cfg.get(ryukyoku_type) == "ryukyoku":
                     dealer_continues = False
 
             if win_type == "chombo":
@@ -231,7 +239,7 @@ class GameState:
         # 進行中の局のリーチ宣言を反映
         for p in self.riichi_declared:
             if p in self.scores:
-                self.scores[p] -= 1000
+                self.scores[p] -= riichi_pt
                 self.riichi_stick += 1
         autosave_draft()
 
@@ -262,7 +270,9 @@ class GameState:
 
     def check_game_end(self):
         detail = self.rule_config.get("detail", {})
+        basic = self.rule_config.get("basic", {})
         
+        # 飛び判定
         tobi_end = detail.get("tobi_end", "under_zero")
         if tobi_end == "under_zero":
             for p, s in self.scores.items():
@@ -272,15 +282,21 @@ class GameState:
             for p, s in self.scores.items():
                 if s <= 0:
                     return f"飛び終了（{p} が0点以下）"
+        # tobi_end == "none" の場合はトビ判定をスキップ
                     
         top_score = max(self.scores.values())
         top_players = [p for p, s in self.scores.items() if s == top_score]
         
+        game_length = basic.get("game_length", "hanchan")
+        ret_score = basic.get("return_score", 30000)
         west_ext = detail.get("west_extension", "under_30000")
-        b_cfg = self.rule_config.get("basic", {})
-        ret_score = b_cfg.get("return_score", 30000)
+
+        # 最終局基準インデックス: 東風戦なら 3 (東4局), 半荘戦なら 7 (南4局)
+        final_idx = 3 if game_length == "tonpu" else 7
+        next_wind_name = "南" if game_length == "tonpu" else "西"
+        final_wind_name = "東" if game_length == "tonpu" else "南"
         
-        if self.round_idx >= 7: # 南4局以降
+        if self.round_idx >= final_idx:
             dealer = self.players[self.round_idx % 4]
             if top_score >= ret_score or (west_ext in ["none", "fixed_nan4"]):
                 if dealer in top_players:
@@ -296,19 +312,22 @@ class GameState:
                             if detail.get("tenpai_yame", True):
                                 if last_round.get("win_type") == "ryukyoku" and dealer in last_round.get("tenpai", []):
                                     return "テンパイやめ（親トップ）"
+
+        limit_idx = final_idx + 1
         if west_ext == "none" or west_ext == "fixed_nan4":
-            if self.round_idx >= 8:
-                return "南4局終了"
+            if self.round_idx >= limit_idx:
+                return f"{final_wind_name}4局終了"
         else:
             if top_score >= ret_score:
-                if self.round_idx == 8 and len([r for r in self.round_history if r["kyoku_name"].startswith("西")]) == 0:
-                    return f"南4局終了（トップ {top_score:,}点）"
-                elif self.round_idx >= 8:
+                if self.round_idx == limit_idx and len([r for r in self.round_history if r["kyoku_name"].startswith(next_wind_name)]) == 0:
+                    return f"{final_wind_name}4局終了（トップ {top_score:,}点）"
+                elif self.round_idx >= limit_idx:
                     return f"サドンデス終了（トップ {top_score:,}点）"
-            elif self.round_idx >= 12:
-                return "西4局終了（北入りなし）"
+            elif self.round_idx >= limit_idx + 4:
+                return f"{next_wind_name}4局終了（延長終了）"
                 
         return None
+
 
     def apply_ryukyoku(self, tenpai_players):
         self.save_snapshot()
@@ -439,3 +458,157 @@ def reset_game():
             del st.session_state[k]
     st.session_state.view = "setup"
     db.delete_draft()
+
+
+def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_config,
+                           player_member_ids=None, player_was_group_member=None,
+                           date_str=None, game_id=None):
+    """GameState および対局確定情報から、新DB構造用の不可分保存ペイロードを構築する。"""
+    from calc import calc_point
+    from datetime import datetime
+    sorted_p = sorted(players, key=lambda p: scores[p], reverse=True)
+    played_at = date_str or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    gid = game_id or db.generate_uuid7()
+
+    participants = []
+    for rank, name in enumerate(sorted_p, start=1):
+        seat = players.index(name) + 1 if name in players else rank
+        mid = (player_member_ids or {}).get(name) or name
+        was_mem = (player_was_group_member or {}).get(name, 1)
+        pt = calc_point(scores[name], rank, rule_config) if rule_config else 0.0
+        participants.append({
+            "seat": seat,
+            "member_id": mid,
+            "player_name_snapshot": name,
+            "final_score": scores[name],
+            "rank": rank,
+            "point": pt,
+            "was_group_member": was_mem
+        })
+
+    rule_name = (rule_config or {}).get("rule_name", rule_id)
+    detail_cfg = (rule_config or {}).get("detail", {})
+    honba_pt = detail_cfg.get("honba_pt", 300)
+    riichi_pt = detail_cfg.get("riichi_pt", 1000)
+
+    rounds_payload = []
+    if game_state and hasattr(game_state, "round_history"):
+        for idx, r in enumerate(game_state.round_history):
+            rid = db.generate_uuid7()
+            k_name = r.get("kyoku_name", f"東{idx+1}局")
+            w_type = r.get("win_type", "ron")
+            winner = r.get("winner", "")
+            loser = r.get("loser", "")
+            score = r.get("score", 0)
+            honba = r.get("honba", 0)
+            riichi_list = r.get("riichi", [])
+            furo_list = r.get("furo", [])
+            tenpai_list = r.get("tenpai", [])
+            multi_wins = r.get("multi_wins", [])
+
+            seats_payload = []
+            for seat_idx, p in enumerate(players, start=1):
+                mid = (player_member_ids or {}).get(p) or p
+                is_r = 1 if p in riichi_list else 0
+                is_f = 1 if p in furo_list else 0
+                is_t = 1 if p in tenpai_list else 0
+                is_w = 0
+                is_l = 0
+                base_p = 0
+                honba_p = 0
+                kyotaku_p = -(riichi_pt if is_r else 0)
+                pen_p = 0
+
+                if w_type == "ron":
+                    if p == winner:
+                        is_w = 1
+                        base_p = score
+                        honba_p = honba * honba_pt
+                        kyotaku_p += (r.get("starting_riichi_sticks", 0) + len(riichi_list)) * riichi_pt
+                    elif p == loser:
+                        is_l = 1
+                        base_p = -score
+                        honba_p = -(honba * honba_pt)
+                elif w_type == "tsumo":
+                    if p == winner:
+                        is_w = 1
+                        base_p = score
+                        honba_p = honba * honba_pt
+                        kyotaku_p += (r.get("starting_riichi_sticks", 0) + len(riichi_list)) * riichi_pt
+                    else:
+                        dealer_p = players[idx % 4]
+                        honba_each = honba * (honba_pt // 3)
+                        if winner == dealer_p:
+                            base_p = -(score // 3)
+                            honba_p = -honba_each
+                        else:
+                            base_ko_pay = int(((score / 4) + 99) // 100 * 100)
+                            base_oya_pay = score - (base_ko_pay * 2)
+                            base_p = -base_oya_pay if p == dealer_p else -base_ko_pay
+                            honba_p = -honba_each
+                elif w_type == "multi_ron":
+                    if any(wd.get("winner") == p for wd in multi_wins):
+                        is_w = 1
+                        my_win = next(wd for wd in multi_wins if wd.get("winner") == p)
+                        base_p = my_win.get("points_data", {}).get("total", 0)
+                        honba_p = honba * honba_pt
+                    elif p == loser:
+                        is_l = 1
+                        tot_win = sum(wd.get("points_data", {}).get("total", 0) for wd in multi_wins)
+                        base_p = -tot_win
+                        honba_p = -(len(multi_wins) * honba * honba_pt)
+                elif w_type == "ryukyoku":
+                    n_t = len(tenpai_list)
+                    n_n = len(players) - n_t
+                    if 0 < n_t < 4:
+                        bappu = detail_cfg.get("noten_bappu_pt", 3000)
+                        pen_p = (bappu // n_t) if is_t else -(bappu // n_n)
+                elif w_type == "chombo":
+                    if p == winner:
+                        is_l = 1
+                        m_base = detail_cfg.get("mangan_base_pt", 8000)
+                        pen_p = -m_base
+                    else:
+                        m_base = detail_cfg.get("mangan_base_pt", 8000)
+                        pen_p = m_base // 3
+
+                score_delta = base_p + honba_p + kyotaku_p + pen_p
+                seats_payload.append({
+                    "seat": seat_idx,
+                    "member_id": mid,
+                    "base_point": base_p,
+                    "honba_point": honba_p,
+                    "kyotaku_point": kyotaku_p,
+                    "penalty_point": pen_p,
+                    "score_delta": score_delta,
+                    "chip_delta": 0,
+                    "han": None,
+                    "fu": None,
+                    "is_winner": is_w,
+                    "is_loser": is_l,
+                    "is_riichi": is_r,
+                    "is_furo": is_f,
+                    "is_tenpai": is_t
+                })
+
+            rounds_payload.append({
+                "round_id": rid,
+                "round_index": idx,
+                "kyoku_name": k_name,
+                "honba": honba,
+                "riichi_sticks": r.get("starting_riichi_sticks", 0),
+                "result_type": w_type,
+                "seats": seats_payload
+            })
+
+    return {
+        "game_id": gid,
+        "played_at": played_at,
+        "group_id": group_id,
+        "rule_name_snapshot": rule_name,
+        "rule_config_snapshot": rule_config or {},
+        "game_mode": "detail" if rounds_payload else "simple",
+        "participants": participants,
+        "rounds": rounds_payload
+    }
+

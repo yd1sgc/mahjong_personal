@@ -610,26 +610,20 @@ def show_endgame():
                 m_id = st.session_state.get("player_member_ids", {}).get(p)
                 player_was_group_member[p] = 1 if (m_id and m_id in target_members_ids) else 0
                 
-            game_id = db.save_game(
-                date_str, scores, players, local=db.IS_LOCAL,
-                rule_id=st.session_state.get("current_rule_id", "m_league"),
+            payload = game_logic.build_v2_game_payload(
+                game_state=st.session_state.game_state,
+                players=players,
+                scores=scores,
                 group_id=group_id,
+                rule_id=st.session_state.get("current_rule_id", "m_league"),
                 rule_config=r_config,
                 player_member_ids=st.session_state.get("player_member_ids"),
-                player_was_group_member=player_was_group_member
+                player_was_group_member=player_was_group_member,
+                date_str=date_str
             )
-            for r in st.session_state.game_state.round_history:
-                multi_wins_json = None
-                if "multi_wins" in r and r["multi_wins"]:
-                    multi_wins_json = json.dumps(r["multi_wins"], ensure_ascii=False)
-                
-                db.save_round(game_id, r["kyoku_name"], r.get("winner", ""), r.get("loser", ""),
-                              r.get("score", 0), r.get("furo", []), r.get("riichi", []),
-                              win_type=r.get("win_type", ""),
-                              tenpai=r.get("tenpai", []),
-                              multi_wins_json=multi_wins_json,
-                              local=db.IS_LOCAL)
+            game_id = db.save_game_record(payload)
             st.cache_data.clear()
+
             result_rows = []
             for i, p in enumerate(sorted_p):
                 c_count = sum(1 for r in st.session_state.game_state.round_history if r.get("win_type") == "chombo" and r.get("winner") == p)

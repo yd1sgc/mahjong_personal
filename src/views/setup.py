@@ -257,15 +257,20 @@ def show_simple_input():
                 m_id = st.session_state.get("player_member_ids", {}).get(p)
                 player_was_group_member[p] = 1 if (m_id and m_id in target_members_ids) else 0
                 
-            game_id = db.save_game(
-                date_str, scores, players, local=db.IS_LOCAL,
-                rule_id=st.session_state.get("current_rule_id", "m_league"),
+            payload = game_logic.build_v2_game_payload(
+                game_state=None,
+                players=players,
+                scores=scores,
                 group_id=group_id,
+                rule_id=st.session_state.get("current_rule_id", "m_league"),
                 rule_config=r_config,
                 player_member_ids=st.session_state.get("player_member_ids"),
-                player_was_group_member=player_was_group_member
+                player_was_group_member=player_was_group_member,
+                date_str=date_str
             )
+            game_id = db.save_game_record(payload)
             st.cache_data.clear()
+
             result_rows = [
                 {"rank": i + 1, "name": p, "score": scores[p],
                  "pt": calc.calc_special_point(scores[p], i + 1, rule_config=r_config)}

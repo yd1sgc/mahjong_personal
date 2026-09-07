@@ -17,16 +17,17 @@
 # Current Status
 - 新DB構造（第3正規形・UUID v7・完全縦持ち）への移行ブランチ `feature/app-v2-migration` を作成。
 - アプリケーション移行仕様書（`docs/APPLICATION_V2_SPECIFICATION.md`）策定完了。
-- **Phase 1 完了**: `src/database2.py` の新スキーマ専用リファクタリング完了。
-  - 旧互換コード（INTEGER ID、横持ち列、カンマ区切り局データ）を完全撤廃し、1,366行から約530行に大幅スリム化。
-  - 不可分トランザクション保存API（`save_game_record`）、カスケード削除（`delete_game`）、完全ロールバック機構を実装。
-  - 実データ（`local_mahjong_v2_new.db`）の276対局・1,104参加者・300局・1,200局座席データの完全読み込みを検証済み。
-  - トランザクション検証（`scratch/test_db_v2_transaction.py`）全件PASS。
-  - 最重要の中断復元テスト（`tests/test_interruption_recovery.py` 全4件）、計算テスト（`test_calc` 全17件）、対局進行テスト（`test_game_logic` 全11件）が PASS。
+- **Phase 1 完了**: `src/database2.py` の新スキーマ専用リファクタリング・不可分トランザクション化完了（コミット: `0b5831d`）。
+- **Phase 2 完了**: 対局進行・保存層のハードコード完全撤廃と不可分トランザクション保存APIへの一本化完了。
+  - 本場点（`honba_pt`）、リーチ棒供託点（`riichi_pt`）、ゲーム長（東風戦／半荘戦判定）、飛び判定（`under_zero` / `zero_or_less` / `none`）を動的化。
+  - `build_v2_game_payload` を実装し、各局の4席分レコード（`round_seats`）を生成。
+  - `src/views/game.py` および `src/views/setup.py` の保存処理を `db.save_game_record` に一本化。
+  - 動的ルールテスト（`scratch/test_game_logic_dynamic.py`）全件PASS。
+  - 対局中断・復元テスト（`tests/test_interruption_recovery.py` 全4件）および点数計算・進行テストが全件 PASS。
 
 # TODO (Next Actions)
 - [x] Phase 1: `src/database2.py` を新DB構造（UUID v7、`games`・`game_participants`・`rounds`・`round_seats`）専用に刷新
-- [ ] Phase 2: `src/game_logic.py` および対局画面（`src/views/game.py`, `src/views/setup.py`）の `round_seats` 生成・新保存API連携
+- [x] Phase 2: `src/game_logic.py` および対局画面（`src/views/game.py`, `src/views/setup.py`）のハードコード撤廃、`round_seats` 生成・新保存API連携
 - [ ] Phase 3: `src/views/stats.py` の集計ロジックを正規化SQLクエリへ全面置換
 - [ ] Phase 4: `tests/test_identity_schema.py` などの古いマイグレーションテストを新V2スキーマテストへ刷新し、`tests/run_tests.py` 全38件以上を 0 failed にする
 - [ ] Phase 5: リモートDB（Supabase）向けの追従マイグレーション実施
