@@ -1605,6 +1605,8 @@ def get_round_stats_summary(group_id=None, rule_id=None, year=None, include_gues
         SELECT COUNT(DISTINCT r.game_id)
         FROM rounds r
         JOIN games g ON r.game_id = g.game_id
+        JOIN round_seats rs ON r.round_id = rs.round_id
+        JOIN members m ON rs.member_id = m.member_id
         {where_str}
         """
         c = conn.cursor()
