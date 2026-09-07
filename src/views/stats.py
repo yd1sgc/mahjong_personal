@@ -176,24 +176,29 @@ def show_stats():
     # ── 総合ポイント推移グラフ ────────────────────────────
     st.divider()
     st.subheader("総合ポイント推移")
-    game_ids_sorted = df_results["game_id"].drop_duplicates().tolist()
-    df_pivot = (
-        df_results.pivot_table(index="game_id", columns="name", values="pt", aggfunc="sum")
-        .reindex(game_ids_sorted)
-        .fillna(0)
-    )
-    df_cumsum = df_pivot.cumsum()
-    df_cumsum.index = [f"G{i+1:03}" for i in range(len(game_ids_sorted))]
-    zero_row = pd.DataFrame(0, index=["G000"], columns=df_cumsum.columns)
-    df_chart = pd.concat([zero_row, df_cumsum])
+    if not df_results.empty:
+        df_results_chart = df_results.copy()
+        df_results_chart["pt"] = pd.to_numeric(df_results_chart["pt"], errors="coerce").fillna(0.0).astype(float)
+        game_ids_sorted = df_results_chart["game_id"].drop_duplicates().tolist()
+        df_pivot = (
+            df_results_chart.pivot_table(index="game_id", columns="name", values="pt", aggfunc="sum")
+            .reindex(game_ids_sorted)
+            .fillna(0.0)
+            .astype(float)
+        )
+        df_cumsum = df_pivot.cumsum().astype(float)
+        df_cumsum.index = [f"G{i+1:03}" for i in range(len(game_ids_sorted))]
+        zero_row = pd.DataFrame(0.0, index=["G000"], columns=df_cumsum.columns, dtype=float)
+        df_chart = pd.concat([zero_row, df_cumsum]).astype(float)
 
-
-    top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
-    default_sel = [m for m in top5 if m in df_chart.columns]
-    selected = st.multiselect("表示メンバー", options=real_members,
-                              default=default_sel, key=f"chart_sel_{chosen_grp_id}_{include_guests}")
-    if selected:
-        st.line_chart(df_chart[[c for c in selected if c in df_chart.columns]])
+        top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
+        default_sel = [m for m in top5 if m in df_chart.columns]
+        selected = st.multiselect("表示メンバー", options=real_members,
+                                  default=default_sel, key=f"chart_sel_{chosen_grp_id}_{include_guests}")
+        if selected:
+            valid_cols = [c for c in selected if c in df_chart.columns]
+            if valid_cols:
+                st.line_chart(df_chart[valid_cols])
 
     # ── レコード ──────────────────────────────────────────
     st.divider()
@@ -239,7 +244,8 @@ def show_stats():
     st.divider()
     st.subheader("相性マトリクス（直接対決）")
     st.caption("行: 自分 / 列: 相手（同卓時のpt差合計） 青: 得意 / 赤: 苦手")
-    df_m = df_results[df_results["name"].isin(real_members)][["game_id", "name", "pt"]]
+    df_m = df_results[df_results["name"].isin(real_members)][["game_id", "name", "pt"]].copy()
+    df_m["pt"] = pd.to_numeric(df_m["pt"], errors="coerce").fillna(0.0).astype(float)
     df_pairs = (
         df_m.merge(df_m, on="game_id", suffixes=("_me", "_enemy"))
         .query("name_me != name_enemy")
@@ -247,16 +253,27 @@ def show_stats():
     )
     df_matrix = (
         df_pairs.groupby(["name_me", "name_enemy"])["diff"].sum()
-        .unstack(fill_value=0)
-        .reindex(index=real_members, columns=real_members, fill_value=0)
-    )
-    default_matrix = real_members[:5] if len(real_members) >= 5 else real_members
+        .unstack(fill_value=0.0)
+        .reindex(index=real_members, columns=real_members, fill_value=0.0)
+    ).astype(float)
+
+    # デフォルト表示メンバーは、五十音順ではなく「試合数が多い上位5名」を選択
+    top_active = game_stats.sort_values("試合数", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
+    default_matrix = [m for m in top_active if m in real_members]
+    if not default_matrix:
+        default_matrix = real_members[:5] if len(real_members) >= 5 else real_members
+
     target = st.multiselect("分析対象", options=real_members,
                             default=default_matrix, key=f"matrix_sel_{chosen_grp_id}_{include_guests}")
     if target:
-        df_show_matrix = df_matrix.loc[target, target]
+        df_show_matrix = df_matrix.loc[target, target].astype(float)
+        # 0を中心に正負対称（青: 得意 / 赤: 苦手）のカラーマップを確実に適用
+        vals = df_show_matrix.values
+        max_abs = float(max(abs(vals.min()), abs(vals.max()), 1.0)) if vals.size > 0 else 1.0
         st.dataframe(
-            df_show_matrix.style.background_gradient(cmap='coolwarm_r', axis=None).format("{:+.1f}"),
+            df_show_matrix.style.background_gradient(
+                cmap='coolwarm_r', axis=None, vmin=-max_abs, vmax=max_abs
+            ).format("{:+.1f}"),
             use_container_width=True,
         )
 

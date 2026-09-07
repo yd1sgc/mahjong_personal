@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import time
+from decimal import Decimal
 import pandas as pd
 from contextlib import contextmanager
 from datetime import datetime
@@ -100,7 +101,14 @@ def _fetch_df(conn, query, params=None):
         cols = [desc[0] for desc in c.description]
         # sqlite3.Row またはタプルのリストから DataFrame を生成
         dict_rows = [dict(r) if isinstance(r, sqlite3.Row) else r for r in rows]
-        return pd.DataFrame(dict_rows, columns=cols)
+        df = pd.DataFrame(dict_rows, columns=cols)
+        # Decimal 型（PostgreSQL の NUMERIC 等）の列を float に自動変換
+        for col in df.columns:
+            if df[col].dtype == object and not df[col].empty:
+                first_valid = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+                if isinstance(first_valid, Decimal):
+                    df[col] = df[col].astype(float)
+        return df
     return pd.DataFrame()
 
 
@@ -1470,8 +1478,11 @@ def get_results_data(group_id=None, rule_id=None, year=None, include_guests=True
         ORDER BY g.played_at ASC, gp.game_id ASC, gp.rank ASC
         """
         df = _fetch_df(conn, query, tuple(params))
-        if not df.empty and "date" in df.columns:
-            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        if not df.empty:
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            if "pt" in df.columns:
+                df["pt"] = pd.to_numeric(df["pt"], errors="coerce").fillna(0.0).astype(float)
         return df
 
 

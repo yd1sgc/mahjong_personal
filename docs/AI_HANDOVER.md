@@ -30,8 +30,10 @@
 - [x] Phase 5: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定
 - [x] Supabase本番マイグレーション実行完了、オンライン既存27件のみの選択的Push同期完了（ローカル249件のローカル限定保護）
 - [x] app.py のローカルDBパスを local_mahjong_v2_new.db に追従、未同期対局表示バグの解消
+- [x] オンライン環境における総合ポイント推移グラフ（Decimal型によるJSONシリアライズ不可不具合）および相性マトリクス（型不一致による着色無効化、五十音順初期選択によるスカスカ表示）の修正
 
 # Changelog (Recent History)
+- 2026-09-08: オンラインDB（PostgreSQL）で NUMERIC カラムが Decimal 型として返されることに起因する2つの不具合を修正。(1) 総合ポイント推移グラフで `Decimal is not JSON serializable` による描画破綻を解消するため、`database2.py` の `_fetch_df` および `get_results_data`、`stats.py` のチャート生成処理で `float` キャストを一貫して保証。(2) 相性マトリクスでデータ型不一致により `background_gradient` の着色が完全に無効化されていた問題を解消し、初期表示メンバーを五十音順から対戦数（試合数）上位5名に変更、0pt差を白とする正負対称カラーバー（`vmin=-max_abs, vmax=max_abs`）を適用。tests/run_tests.py 全38件 ALL PASS を確認。
 - 2026-09-07: Supabase本番DBへ V2 スキーマ（UUID v7・完全縦持ち）を適用。旧全9テーブル（479レコード）をローカルに完全バックアップ（archive/supabase_v1_backup.json）後、オンラインに存在していた27件のみを選択的Push同期し、ローカルの249件はローカル限定として保護。app.py の参照DBパス修正および成績画面での未同期データ表示クラッシュを修正。tests/run_tests.py 全38件 ALL PASS を確認。
 - 2026-09-07: 新DB構造（local_mahjong_v2_new.db）対応ブランチ `feature/app-v2-migration` を作成し、アプリ全面刷新仕様書 `docs/APPLICATION_V2_SPECIFICATION.md` を策定。
 - 2026-09-05: 対局進行中にドラフト自動保存が呼ばれずデータ消失する不具合を修正。全アクション（リーチ・副露・和了・流局・チョンボ・Undo・修正）での保存トリガー、およびドラフト復元時の `normal` 画面固定・カスタムルール保持を実装。対局中断復元テスト（`tests/test_interruption_recovery.py`）を新設。
