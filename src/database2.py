@@ -838,11 +838,43 @@ def get_pending_count():
 
 
 def get_local_unsynced_games():
-    """未同期かつ同期対象のローカル対局一覧を取得する。"""
+    """未同期かつ同期対象のローカル対局一覧（4座席確定成績を含む）を取得する。"""
     if not IS_LOCAL:
         return pd.DataFrame()
+    query = """
+    SELECT 
+        g.game_id,
+        g.played_at AS date,
+        g.group_id,
+        g.rule_name_snapshot,
+        g.rule_config_snapshot,
+        g.game_mode,
+        g.sync_target,
+        g.is_synced,
+        MAX(CASE WHEN gp.seat = 1 THEN gp.player_name_snapshot END) AS p1_name,
+        MAX(CASE WHEN gp.seat = 1 THEN gp.final_score END) AS p1_score,
+        MAX(CASE WHEN gp.seat = 1 THEN gp.rank END) AS p1_rank,
+        MAX(CASE WHEN gp.seat = 1 THEN gp.point END) AS p1_point,
+        MAX(CASE WHEN gp.seat = 2 THEN gp.player_name_snapshot END) AS p2_name,
+        MAX(CASE WHEN gp.seat = 2 THEN gp.final_score END) AS p2_score,
+        MAX(CASE WHEN gp.seat = 2 THEN gp.rank END) AS p2_rank,
+        MAX(CASE WHEN gp.seat = 2 THEN gp.point END) AS p2_point,
+        MAX(CASE WHEN gp.seat = 3 THEN gp.player_name_snapshot END) AS p3_name,
+        MAX(CASE WHEN gp.seat = 3 THEN gp.final_score END) AS p3_score,
+        MAX(CASE WHEN gp.seat = 3 THEN gp.rank END) AS p3_rank,
+        MAX(CASE WHEN gp.seat = 3 THEN gp.point END) AS p3_point,
+        MAX(CASE WHEN gp.seat = 4 THEN gp.player_name_snapshot END) AS p4_name,
+        MAX(CASE WHEN gp.seat = 4 THEN gp.final_score END) AS p4_score,
+        MAX(CASE WHEN gp.seat = 4 THEN gp.rank END) AS p4_rank,
+        MAX(CASE WHEN gp.seat = 4 THEN gp.point END) AS p4_point
+    FROM games g
+    LEFT JOIN game_participants gp ON g.game_id = gp.game_id
+    WHERE g.sync_target = 1 AND g.is_synced = 0
+    GROUP BY g.game_id
+    ORDER BY g.played_at DESC
+    """
     with _local_db() as conn:
-        return _fetch_df(conn, "SELECT * FROM games WHERE sync_target = 1 AND is_synced = 0 ORDER BY played_at DESC")
+        return _fetch_df(conn, query)
 
 
 def mark_as_synced(game_id=None):

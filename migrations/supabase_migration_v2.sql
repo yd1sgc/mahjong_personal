@@ -1,12 +1,13 @@
-﻿-- ==============================================================================
+-- ==============================================================================
 -- Supabase (PostgreSQL) Migration Script: V2 Normalized Architecture
 -- Version: 2.0.0
 -- Description:
 --   1. 第3正規形・UUID v7・完全縦持ち構造への移行
---   2. members (UUID), groups (UUID), group_memberships, rule_templates (JSONB)
---   3. games (UUID), game_participants, rounds (UUID), round_seats
---   4. drafts (JSONB)
---   5. 旧テーブル（V1）の安全退避およびインデックス作成
+--   2. 旧V1テーブル群の完全安全退避（_v1_backup）
+--   3. members (UUID), groups (UUID), group_memberships, rule_templates (JSONB)
+--   4. games (UUID), game_participants, rounds (UUID), round_seats
+--   5. drafts (JSONB)
+--   6. パフォーマンスインデックス作成と公式ルールプリセットの初期投入
 -- ==============================================================================
 
 BEGIN;
@@ -18,29 +19,86 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 既存テーブルに updated_at カラムがない場合に追加
+ALTER TABLE schema_meta ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 INSERT INTO schema_meta (key, value)
 VALUES ('schema_version', '2.0.0')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
--- 2. 旧テーブルの安全退避（INTEGER ID の旧テーブルが存在する場合）
+-- 2. 旧V1テーブル群の安全退避
 DO $$
 BEGIN
+    -- game_participants (game_id が integer/bigint の旧構造)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'games' AND column_name = 'game_id' AND data_type = 'integer'
+        WHERE table_name = 'game_participants' AND column_name = 'game_id' AND data_type IN ('integer', 'bigint')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'game_participants_v1_backup'
+    ) THEN
+        ALTER TABLE game_participants RENAME TO game_participants_v1_backup;
+    END IF;
+
+    -- rounds (id が integer/bigint の旧構造)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'rounds' AND column_name = 'id' AND data_type IN ('integer', 'bigint')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'rounds_v1_backup'
+    ) THEN
+        ALTER TABLE rounds RENAME TO rounds_v1_backup;
+    END IF;
+
+    -- games (game_id が integer/bigint の旧構造)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'games' AND column_name = 'game_id' AND data_type IN ('integer', 'bigint')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'games_v1_backup'
     ) THEN
         ALTER TABLE games RENAME TO games_v1_backup;
     END IF;
 
+    -- group_memberships (member_id が integer/bigint の旧構造)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'rounds' AND column_name = 'id' AND data_type = 'integer'
+        WHERE table_name = 'group_memberships' AND column_name = 'member_id' AND data_type IN ('integer', 'bigint')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'group_memberships_v1_backup'
     ) THEN
-        ALTER TABLE rounds RENAME TO rounds_v1_backup;
+        ALTER TABLE group_memberships RENAME TO group_memberships_v1_backup;
+    END IF;
+
+    -- members (member_id が integer/bigint の旧構造)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'members' AND column_name = 'member_id' AND data_type IN ('integer', 'bigint')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'members_v1_backup'
+    ) THEN
+        ALTER TABLE members RENAME TO members_v1_backup;
+    END IF;
+
+    -- groups
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'groups'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'groups_v1_backup'
+    ) THEN
+        ALTER TABLE groups RENAME TO groups_v1_backup;
+    END IF;
+
+    -- rule_templates
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rule_templates'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rule_templates_v1_backup'
+    ) THEN
+        ALTER TABLE rule_templates RENAME TO rule_templates_v1_backup;
     END IF;
 END $$;
 
--- 3. マスタテーブル群
+-- 3. マスタテーブル群（V2 新規作成）
 CREATE TABLE IF NOT EXISTS members (
     member_id TEXT PRIMARY KEY,
     member_name TEXT NOT NULL,

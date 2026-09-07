@@ -20,7 +20,8 @@ st.set_page_config(
 )
 
 is_local_mode = os.getenv("MAHJONG_FORCE_LOCAL") == "1" or st.secrets.get("local_mode", False)
-local_db_path = r"C:\Users\segu1\OneDrive\mahjong_personal\mahjong_local.db" if is_local_mode else None
+default_local_path = os.path.join(os.path.dirname(__file__), "local_mahjong_v2_new.db")
+local_db_path = os.getenv("MAHJONG_LOCAL_DB_PATH", default_local_path) if is_local_mode else None
 try:
     remote_db_kwargs = dict(st.secrets["database"])
 except KeyError:

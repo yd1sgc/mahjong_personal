@@ -28,13 +28,11 @@
 - [x] Phase 3: `src/views/stats.py` の集計ロジックを正規化SQLクエリへ全面置換
 - [x] Phase 4: 分散ハイブリッド同期（選択的Push & 全件Pull）の実装、テスト層の刷新、`tests/run_tests.py` 全38件 0 failed 達成
 - [x] Phase 5: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定
-- [ ] 今後: Supabase SQL Editor で `migrations/supabase_migration_v2.sql` を実行し、本番オンラインDBを昇格させる運用作業
-
-
-
-
+- [x] Supabase本番マイグレーション実行完了、オンライン既存27件のみの選択的Push同期完了（ローカル249件のローカル限定保護）
+- [x] app.py のローカルDBパスを local_mahjong_v2_new.db に追従、未同期対局表示バグの解消
 
 # Changelog (Recent History)
+- 2026-09-07: Supabase本番DBへ V2 スキーマ（UUID v7・完全縦持ち）を適用。旧全9テーブル（479レコード）をローカルに完全バックアップ（archive/supabase_v1_backup.json）後、オンラインに存在していた27件のみを選択的Push同期し、ローカルの249件はローカル限定として保護。app.py の参照DBパス修正および成績画面での未同期データ表示クラッシュを修正。tests/run_tests.py 全38件 ALL PASS を確認。
 - 2026-09-07: 新DB構造（local_mahjong_v2_new.db）対応ブランチ `feature/app-v2-migration` を作成し、アプリ全面刷新仕様書 `docs/APPLICATION_V2_SPECIFICATION.md` を策定。
 - 2026-09-05: 対局進行中にドラフト自動保存が呼ばれずデータ消失する不具合を修正。全アクション（リーチ・副露・和了・流局・チョンボ・Undo・修正）での保存トリガー、およびドラフト復元時の `normal` 画面固定・カスタムルール保持を実装。対局中断復元テスト（`tests/test_interruption_recovery.py`）を新設。
 - 2026-08-25: AIエージェント用のプロジェクト固有ルール（`.gemini/rules/user_global.md`）の動作緩和と、重要操作の強制確認フック（`.gemini/hooks.json`, `scripts/safety_hook.py`）を導入。
