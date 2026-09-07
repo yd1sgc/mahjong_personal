@@ -37,24 +37,37 @@ def show_stats():
 
     rule_map = {r["rule_id"]: _stats_rule_label(r) for r in rules}
 
-    grp_options = [{"group_id": "all", "group_name": "全グループ (全体)", "members": []}] + groups
+    grp_options = [{"group_id": "all", "group_name": "全グループ (全体)"}] + groups
+    grp_name_map = {g["group_id"]: g["group_name"] for g in grp_options}
+    grp_ids = [g["group_id"] for g in grp_options]
+
     rule_options = [{"rule_id": "all", "rule_name": "全ルール (全体)", "kind": "all"}] + rules
+    rule_name_map = {r["rule_id"]: _stats_rule_label(r) for r in rule_options}
+    rule_ids = [r["rule_id"] for r in rule_options]
+
+    def _on_grp_change():
+        cur_g = st.session_state.get("stats_grp_id_sel", "all")
+        st.session_state["stats_include_guests"] = (cur_g == "all")
 
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        chosen_grp = st.selectbox(
+        chosen_grp_id = st.selectbox(
             " グループ", 
-            options=grp_options, 
-            format_func=lambda g: g["group_name"], 
-            key="stats_grp_sel"
+            options=grp_ids, 
+            format_func=lambda gid: grp_name_map.get(gid, gid), 
+            key="stats_grp_id_sel",
+            on_change=_on_grp_change
         )
     with col_f2:
-        chosen_rule = st.selectbox(
+        chosen_rule_id = st.selectbox(
             " ルール", 
-            options=rule_options, 
-            format_func=_stats_rule_label, 
-            key="stats_rule_sel"
+            options=rule_ids, 
+            format_func=lambda rid: rule_name_map.get(rid, rid), 
+            key="stats_rule_id_sel"
         )
+
+    if "stats_include_guests" not in st.session_state:
+        st.session_state["stats_include_guests"] = (chosen_grp_id == "all")
 
     col_f3, col_f4 = st.columns(2)
     with col_f3:
@@ -65,14 +78,14 @@ def show_stats():
         selected_year = st.selectbox("集計期間", year_options, key="stats_year")
     with col_f4:
         st.markdown("<div style='margin-top: 1.6rem;'>", unsafe_allow_html=True)
-        include_guests = st.checkbox(" ゲストも表示する", value=(chosen_grp["group_id"] == "all"), key="stats_include_guests")
+        include_guests = st.checkbox(" ゲストも表示する", key="stats_include_guests")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
 
     # ── 新V2 SQL集計呼び出し ─────────────────────────────────
-    gid_filter = chosen_grp["group_id"]
-    rule_filter = chosen_rule["rule_id"]
+    gid_filter = chosen_grp_id
+    rule_filter = chosen_rule_id
 
     game_stats = db.get_game_stats_summary(
         group_id=gid_filter,
@@ -93,6 +106,14 @@ def show_stats():
         rule_id=rule_filter,
         year=selected_year,
         include_guests=include_guests
+    )
+
+    # 対局履歴用には、ゲスト参加対局も欠落なく4名揃えて表示するため include_guests=True の全件を取得
+    df_results_all = db.get_results_data(
+        group_id=gid_filter,
+        rule_id=rule_filter,
+        year=selected_year,
+        include_guests=True
     )
 
     if df_results.empty:
@@ -170,7 +191,7 @@ def show_stats():
     top5 = game_stats.sort_values("総合pt", ascending=False)['名前'].tolist()[:5] if not game_stats.empty else []
     default_sel = [m for m in top5 if m in df_chart.columns]
     selected = st.multiselect("表示メンバー", options=real_members,
-                              default=default_sel, key="chart_sel")
+                              default=default_sel, key=f"chart_sel_{chosen_grp_id}_{include_guests}")
     if selected:
         st.line_chart(df_chart[[c for c in selected if c in df_chart.columns]])
 
@@ -231,7 +252,7 @@ def show_stats():
     )
     default_matrix = real_members[:5] if len(real_members) >= 5 else real_members
     target = st.multiselect("分析対象", options=real_members,
-                            default=default_matrix, key="matrix_sel")
+                            default=default_matrix, key=f"matrix_sel_{chosen_grp_id}_{include_guests}")
     if target:
         df_show_matrix = df_matrix.loc[target, target]
         st.dataframe(
@@ -268,8 +289,8 @@ def show_stats():
         st.divider()
 
     history_rows = []
-    # played_at 降順で対局履歴を作成
-    for gid, g in df_results.groupby("game_id", sort=False):
+    # played_at 降順で対局履歴を作成（ゲスト参加対局も4人揃えて表示するため df_results_all を使用）
+    for gid, g in df_results_all.groupby("game_id", sort=False):
         g_sorted = g.sort_values("rank").reset_index(drop=True)
         if len(g_sorted) < 4:
             continue
