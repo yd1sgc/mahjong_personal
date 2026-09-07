@@ -608,6 +608,23 @@ def delete_draft(draft_id="current_game"):
 #  スキーマ初期化 & 互換性ブリッジ
 # ==============================================================================
 
+def check_connectivity() -> bool:
+    """リモートDB（Supabase）への通信可否を確認し、接続可能なら True、不可なら False を返す。"""
+    if psycopg2 is None or not REMOTE_DB_KWARGS:
+        return False
+    try:
+        conn = get_connection()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def init_db():
+    """オンライン初期化の互換関数（Supabase側はマイグレーション済みのため no-op）。"""
+    pass
+
+
 def init_local_db():
     """新V2スキーマの全テーブルをローカルSQLiteに構築する（テスト・初期化用）。"""
     if not IS_LOCAL:
