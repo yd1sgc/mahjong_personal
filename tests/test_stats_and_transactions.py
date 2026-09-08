@@ -432,3 +432,103 @@ def test_update_game_basic_info_atomic_and_backup():
         assert parts["プレイヤーA"]["point"] == 50.0
         assert parts["プレイヤーD"]["final_score"] == 10000
 
+
+def test_round_edit_multi_ron_recalculation():
+    """局修正においてダブロン（multi_ron）へ修正した際、GameState復元・再計算・DB更新が正常に機能するかを検証"""
+    with _temp_test_db():
+        m1 = db.add_member("プレイヤーA")
+        m2 = db.add_member("プレイヤーB")
+        m3 = db.add_member("プレイヤーC")
+        m4 = db.add_member("プレイヤーD")
+        players = ["プレイヤーA", "プレイヤーB", "プレイヤーC", "プレイヤーD"]
+        player_mids = {"プレイヤーA": m1, "プレイヤーB": m2, "プレイヤーC": m3, "プレイヤーD": m4}
+
+        initial_payload = {
+            "played_at": "2026-09-09 10:00:00",
+            "rule_name_snapshot": "Mリーグルール",
+            "rule_config_snapshot": {"basic": {"init_score": 25000}},
+            "game_mode": "detail",
+            "participants": [
+                {"seat": 1, "member_id": m1, "player_name_snapshot": "プレイヤーA", "final_score": 33000, "rank": 1, "point": 13.0, "was_group_member": 1},
+                {"seat": 2, "member_id": m2, "player_name_snapshot": "プレイヤーB", "final_score": 17000, "rank": 4, "point": -33.0, "was_group_member": 1},
+                {"seat": 3, "member_id": m3, "player_name_snapshot": "プレイヤーC", "final_score": 25000, "rank": 2, "point": 5.0, "was_group_member": 1},
+                {"seat": 4, "member_id": m4, "player_name_snapshot": "プレイヤーD", "final_score": 25000, "rank": 3, "point": -5.0, "was_group_member": 1},
+            ],
+            "rounds": [
+                {
+                    "round_index": 0,
+                    "kyoku_name": "東1局",
+                    "honba": 0,
+                    "riichi_sticks": 0,
+                    "result_type": "ron",
+                    "seats": [
+                        {"seat": 1, "member_id": m1, "score_delta": 8000, "base_point": 8000, "is_winner": 1, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 1},
+                        {"seat": 2, "member_id": m2, "score_delta": -8000, "base_point": -8000, "is_winner": 0, "is_loser": 1, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0},
+                        {"seat": 3, "member_id": m3, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0},
+                        {"seat": 4, "member_id": m4, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0},
+                    ]
+                }
+            ]
+        }
+        game_id = db.save_game_record(initial_payload)
+
+        # 局修正ロジックのシミュレーション: DBから GameState を復元
+        game_dict = db.get_game_details(game_id)
+        from views.round_edit import _restore_game_state_from_db
+        gstate, p_list, p_mids, p_was_mem, r_cfg = _restore_game_state_from_db(game_dict)
+
+        # 東1局を「ダブロン (A: 8000点, C: 4000点, 放銃者: B)」に修正
+        updated_round = dict(gstate.round_history[0])
+        updated_round["win_type"] = "multi_ron"
+        updated_round["winner"] = ""
+        updated_round["loser"] = "プレイヤーB"
+        updated_round["score"] = 0
+        updated_round["multi_wins"] = [
+            {"winner": "プレイヤーA", "points_data": {"total": 8000}},
+            {"winner": "プレイヤーC", "points_data": {"total": 4000}}
+        ]
+        gstate.round_history[0] = updated_round
+        gstate.recalculate_state()
+
+        # スコア検証: A: 25000 + 8000 = 33000, B: 25000 - 12000 = 13000, C: 25000 + 4000 = 29000, D: 25000
+        assert gstate.scores["プレイヤーA"] == 33000
+        assert gstate.scores["プレイヤーB"] == 13000
+        assert gstate.scores["プレイヤーC"] == 29000
+        assert gstate.scores["プレイヤーD"] == 25000
+        assert sum(gstate.scores.values()) == 100000
+
+        # payload 構築して保存
+        import game_logic
+        payload = game_logic.build_v2_game_payload(
+            game_state=gstate,
+            players=p_list,
+            scores=gstate.scores,
+            group_id=None,
+            rule_id="m_league",
+            rule_config=r_cfg,
+            player_member_ids=p_mids,
+            player_was_group_member=p_was_mem,
+            date_str="2026-09-09 10:00:00",
+            game_id=game_id
+        )
+        db.update_game_record_atomic(game_id, payload)
+
+        # 保存後の検証
+        saved_details = db.get_game_details(game_id)
+        saved_round = saved_details["rounds"][0]
+        assert saved_round["result_type"] == "multi_ron"
+
+        saved_seats = {s["seat"]: s for s in saved_round["seats"]}
+        assert saved_seats[1]["is_winner"] == 1
+        assert saved_seats[1]["base_point"] == 8000
+        assert saved_seats[3]["is_winner"] == 1
+        assert saved_seats[3]["base_point"] == 4000
+        assert saved_seats[2]["is_loser"] == 1
+        assert saved_seats[2]["score_delta"] == -12000
+
+        # 再度復元しても multi_ron として正常に復元できること
+        restored_state2, _, _, _, _ = _restore_game_state_from_db(saved_details)
+        assert restored_state2.round_history[0]["win_type"] == "multi_ron"
+        assert len(restored_state2.round_history[0]["multi_wins"]) == 2
+
+
