@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sqlite3
 import time
 from decimal import Decimal
@@ -34,6 +35,23 @@ def generate_uuid7() -> str:
     rand_hex = os.urandom(10).hex()
     return f"{ts_hex[:8]}-{ts_hex[8:12]}-7{rand_hex[:3]}-8{rand_hex[3:6]}-{rand_hex[6:18]}"
 
+
+
+def backup_local_db_snapshot() -> str:
+    """DB更新直前に、現在のローカルDBファイルを archive/db/ へ物理コピー退避する。"""
+    if not IS_LOCAL or not SQLITE_PATH or not os.path.exists(SQLITE_PATH):
+        return ""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(SQLITE_PATH))
+        backup_dir = os.path.join(base_dir, "archive", "db")
+        os.makedirs(backup_dir, exist_ok=True)
+        ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest_filename = f"backup_before_edit_{ts_str}.db"
+        dest_path = os.path.join(backup_dir, dest_filename)
+        shutil.copy2(SQLITE_PATH, dest_path)
+        return dest_path
+    except Exception as e:
+        raise RuntimeError(f"DB変更前の自動バックアップ作成に失敗したため処理を中断しました: {e}")
 
 
 def get_local_connection():
@@ -361,9 +379,8 @@ def get_rounds_data(game_id=None):
 
 
 def load_all_rounds():
-    """全局レコードを取得する（CSVエクスポート用）。"""
-    with _db() as conn:
-        return _fetch_df(conn, "SELECT * FROM rounds ORDER BY round_index")
+    """全局レコードを座席別データと結合して取得する（CSVエクスポート用）。"""
+    return get_rounds_data()
 
 
 def load_rounds_by_game(game_id: str):
@@ -373,8 +390,149 @@ def load_rounds_by_game(game_id: str):
         return _fetch_df(conn, f"SELECT * FROM rounds WHERE game_id = {ph} ORDER BY round_index", (str(game_id),))
 
 
+def update_game_record_atomic(game_id: str, payload: dict) -> None:
+    """指定した対局の参加者・局・座席データを単一トランザクション内で安全に置換する（局修正用）。"""
+    if not game_id:
+        raise ValueError("game_id が指定されていません")
+    
+    parts = payload.get("participants", [])
+    if len(parts) != 4:
+        raise ValueError(f"対局参加者は4名必須です (現在: {len(parts)}名)")
+    
+    # ゼロサム検証（初期持ち点×4 = 100,000点等）
+    scores = [int(p.get("final_score", 0)) for p in parts]
+    total_score = sum(scores)
+    rule_cfg = payload.get("rule_config_snapshot") or {}
+    expected_total = rule_cfg.get("basic", {}).get("init_score", 25000) * 4
+    if total_score != expected_total:
+        raise ValueError(f"参加者4名の持ち点合計 ({total_score:,}点) が規定の合計点 ({expected_total:,}点) と一致しません")
+
+    # DB書き換え直前に物理バックアップ退避（ローカル環境時）
+    backup_local_db_snapshot()
+
+    ph = "?" if IS_LOCAL else "%s"
+    rounds_list = payload.get("rounds", [])
+
+    with _db() as conn:
+        c = conn.cursor()
+
+        # 1. 既存 rounds に紐づく round_seats を削除
+        c.execute(f"SELECT round_id FROM rounds WHERE game_id = {ph}", (str(game_id),))
+        old_round_ids = [r[0] for r in c.fetchall()]
+        for rid in old_round_ids:
+            c.execute(f"DELETE FROM round_seats WHERE round_id = {ph}", (str(rid),))
+
+        # 2. 既存 rounds 削除
+        c.execute(f"DELETE FROM rounds WHERE game_id = {ph}", (str(game_id),))
+
+        # 3. 既存 game_participants 削除
+        c.execute(f"DELETE FROM game_participants WHERE game_id = {ph}", (str(game_id),))
+
+        # 4. 新しい game_participants 挿入
+        for idx, p in enumerate(parts):
+            seat_num = int(p.get("seat", idx + 1))
+            mid = str(p.get("member_id", ""))
+            pname = p.get("player_name_snapshot") or p.get("name") or mid or f"P{seat_num}"
+            fscore = int(p.get("final_score", 25000))
+            rnk = int(p.get("rank", idx + 1))
+            pt_val = float(p.get("point", p.get("pt", 0.0)))
+            was_mem = int(p.get("was_group_member", 1))
+
+            c.execute(f"""
+                INSERT INTO game_participants (
+                    game_id, seat, member_id, player_name_snapshot,
+                    final_score, rank, point, was_group_member
+                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (
+                str(game_id), seat_num, mid, pname,
+                fscore, rnk, pt_val, was_mem
+            ))
+
+        # 5. 新しい rounds および round_seats 挿入
+        for r_idx, r in enumerate(rounds_list):
+            rid = r.get("round_id") or generate_uuid7()
+            r_num = int(r.get("round_index", r_idx))
+            k_name = r.get("kyoku_name") or f"第{r_idx + 1}局"
+            res_type = r.get("result_type", "ron")
+
+            c.execute(f"""
+                INSERT INTO rounds (
+                    round_id, game_id, round_index, kyoku_name,
+                    honba, riichi_sticks, result_type
+                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """, (
+                rid, str(game_id), r_num, k_name,
+                int(r.get("honba", 0)), int(r.get("riichi_sticks", 0)), res_type
+            ))
+
+            for s_idx, s in enumerate(r.get("seats", [])):
+                seat_val = int(s.get("seat", s_idx + 1))
+                c.execute(f"""
+                    INSERT INTO round_seats (
+                        round_id, seat, member_id, base_point, honba_point,
+                        kyotaku_point, penalty_point, score_delta, chip_delta,
+                        han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
+                    ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """, (
+                    rid, seat_val, str(s["member_id"]),
+                    int(s.get("base_point", 0)), int(s.get("honba_point", 0)),
+                    int(s.get("kyotaku_point", 0)), int(s.get("penalty_point", 0)),
+                    int(s.get("score_delta", 0)), int(s.get("chip_delta", 0)),
+                    s.get("han"), s.get("fu"),
+                    int(s.get("is_winner", 0)), int(s.get("is_loser", 0)),
+                    int(s.get("is_riichi", 0)), int(s.get("is_furo", 0)),
+                    int(s.get("is_tenpai", 0))
+                ))
+
+        # 6. games テーブルの同期フラグを更新（ローカル修正時は未同期へ戻す）
+        c.execute(f"UPDATE games SET is_synced = {ph} WHERE game_id = {ph}", (0 if IS_LOCAL else 1, str(game_id)))
+
+        # 7. 事後検査: 参加者4件の存在確認
+        c.execute(f"SELECT COUNT(*) FROM game_participants WHERE game_id = {ph}", (str(game_id),))
+        if c.fetchone()[0] != 4:
+            raise RuntimeError("参加者データの更新件数が4件になりませんでした。ロールバックします。")
+
+
+def update_game_basic_info(game_id: str, played_at: str, participants: list) -> None:
+    """対局日時および参加者4名の成績・メンバー紐付けを単一トランザクションで不可分更新する。"""
+    if not game_id:
+        raise ValueError("game_id が指定されていません")
+    if len(participants) != 4:
+        raise ValueError(f"対局参加者は4名必須です (現在: {len(participants)}名)")
+
+    scores = [int(p.get("final_score", 0)) for p in participants]
+    total_score = sum(scores)
+    if total_score != 100000:
+        raise ValueError(f"参加者4名の持ち点合計 ({total_score:,}点) が 100,000 点と一致しません")
+
+    backup_local_db_snapshot()
+
+    ph = "?" if IS_LOCAL else "%s"
+    with _db() as conn:
+        c = conn.cursor()
+        # 1. games テーブル更新
+        c.execute(f"UPDATE games SET played_at = {ph}, is_synced = {ph} WHERE game_id = {ph}", (str(played_at), 0 if IS_LOCAL else 1, str(game_id)))
+
+        # 2. game_participants 更新
+        for p in participants:
+            seat_num = int(p["seat"])
+            mid = str(p["member_id"])
+            pname = str(p.get("player_name_snapshot") or p.get("name") or mid)
+            fscore = int(p["final_score"])
+            rnk = int(p["rank"])
+            pt_val = float(p.get("point", 0.0))
+            was_mem = int(p.get("was_group_member", 1))
+
+            c.execute(f"""
+                UPDATE game_participants
+                SET member_id = {ph}, player_name_snapshot = {ph},
+                    final_score = {ph}, rank = {ph}, point = {ph}, was_group_member = {ph}
+                WHERE game_id = {ph} AND seat = {ph}
+            """, (mid, pname, fscore, rnk, pt_val, was_mem, str(game_id), seat_num))
+
+
 def update_round(round_id: str, fields: dict):
-    """指定局レコードの特定フィールドを更新する。"""
+    """指定局レコードの特定フィールドを更新する（下位互換用。局修正は update_game_record_atomic を推奨）。"""
     if not fields:
         return
     ph = "?" if IS_LOCAL else "%s"
@@ -385,7 +543,7 @@ def update_round(round_id: str, fields: dict):
 
 
 def update_game_scores(game_id: str, scores_dict: dict):
-    """対局の最終持ち点および順位・ptを更新する。"""
+    """対局の最終持ち点および順位・ptを更新する（下位互換用。基本情報修正は update_game_basic_info を推奨）。"""
     from calc import calc_point
     sorted_p = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
     name_to_rank = {name: rank for rank, (name, _) in enumerate(sorted_p, 1)}
@@ -409,30 +567,68 @@ def update_game_scores(game_id: str, scores_dict: dict):
             """, (score, rank, pt, str(game_id), name))
 
 
-def import_games_from_df(df):
-    """CSVから対局データを一括取り込みする。"""
+def import_games_from_df(df, rule_config=None, auto_guest=False):
+    """CSVから対局データを一括取り込みする（UUID解決・ウマオカpt算出・simpleモード）。"""
+    from calc import calc_point
+
+    # 既存メンバーマスタを辞書化 {name: member_id}
+    all_mems = get_all_members(include_archived=True)
+    name_to_id = {m["member_name"]: m["member_id"] for m in all_mems}
+
+    # CSV取込直前にDBバックアップ
+    backup_local_db_snapshot()
+
     count = 0
-    for _, row in df.iterrows():
-        players = [
-            {"seat": 1, "member_id": str(row['p1_name']), "player_name_snapshot": str(row['p1_name']), "final_score": int(row['p1_score']), "rank": 1, "point": 0.0, "was_group_member": 1},
-            {"seat": 2, "member_id": str(row['p2_name']), "player_name_snapshot": str(row['p2_name']), "final_score": int(row['p2_score']), "rank": 2, "point": 0.0, "was_group_member": 1},
-            {"seat": 3, "member_id": str(row['p3_name']), "player_name_snapshot": str(row['p3_name']), "final_score": int(row['p3_score']), "rank": 3, "point": 0.0, "was_group_member": 1},
-            {"seat": 4, "member_id": str(row['p4_name']), "player_name_snapshot": str(row['p4_name']), "final_score": int(row['p4_score']), "rank": 4, "point": 0.0, "was_group_member": 1},
-        ]
-        sorted_p = sorted(players, key=lambda x: x["final_score"], reverse=True)
-        for rank, p in enumerate(sorted_p, 1):
-            p["rank"] = rank
+    rule_cfg = rule_config or {}
+    expected_total = rule_cfg.get("basic", {}).get("init_score", 25000) * 4
+
+    for line_no, (_, row) in enumerate(df.iterrows(), start=1):
+        # 4名のスコア検査
+        raw_scores = [int(row[f'p{i}_score']) for i in range(1, 5)]
+        if sum(raw_scores) != expected_total:
+            raise ValueError(f"行 {line_no}: 持ち点合計 ({sum(raw_scores):,}点) が規定の {expected_total:,}点 と一致しません")
+
+        # メンバーID解決（未登録なら自動登録）
+        resolved_members = []
+        for i in range(1, 5):
+            p_name = str(row[f'p{i}_name']).strip()
+            if p_name not in name_to_id:
+                new_id = add_member(p_name, is_guest=1 if auto_guest else 0)
+                name_to_id[p_name] = new_id
+            resolved_members.append((p_name, name_to_id[p_name], int(row[f'p{i}_score']), i))
+
+        # スコア順にソートして着順・ptを計算
+        sorted_by_score = sorted(resolved_members, key=lambda x: x[2], reverse=True)
+        seat_to_rank_pt = {}
+        for rank, (name, mid, score, seat) in enumerate(sorted_by_score, start=1):
+            pt = calc_point(score, rank, rule_cfg) if rule_cfg else 0.0
+            seat_to_rank_pt[seat] = (rank, pt)
+
+        participants = []
+        for name, mid, score, seat in resolved_members:
+            rank, pt = seat_to_rank_pt[seat]
+            participants.append({
+                "seat": seat,
+                "member_id": mid,
+                "player_name_snapshot": name,
+                "final_score": score,
+                "rank": rank,
+                "point": pt,
+                "was_group_member": 0 if auto_guest else 1
+            })
+
         game_payload = {
-            "game_id": str(row.get('game_id')) if pd.notna(row.get('game_id')) else generate_uuid7(),
+            "game_id": str(row.get('game_id')) if (pd.notna(row.get('game_id')) and str(row.get('game_id')).strip()) else generate_uuid7(),
             "played_at": str(row.get('date', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))),
-            "rule_name_snapshot": "標準ルール",
-            "rule_config_snapshot": {},
-            "game_mode": "detail",
-            "participants": players,
+            "rule_name_snapshot": rule_cfg.get("rule_name", "標準ルール"),
+            "rule_config_snapshot": rule_cfg,
+            "game_mode": "simple",
+            "participants": participants,
             "rounds": []
         }
         save_game_record(game_payload)
         count += 1
+
     return count
 
 
@@ -1269,7 +1465,15 @@ def push_games_to_remote(game_ids=None):
             return 0
 
         for gid in target_gids:
-            # 1. games レコード取得
+            # 既存レコードがリモートにある場合（ローカル修正の再Push）に備え、リモート側の子レコードを一旦削除
+            rc.execute("SELECT round_id FROM rounds WHERE game_id = %s", (gid,))
+            remote_rids = [r[0] for r in rc.fetchall()]
+            for rid in remote_rids:
+                rc.execute("DELETE FROM round_seats WHERE round_id = %s", (rid,))
+            rc.execute("DELETE FROM rounds WHERE game_id = %s", (gid,))
+            rc.execute("DELETE FROM game_participants WHERE game_id = %s", (gid,))
+
+            # 1. games レコード取得・送信
             lc.execute("SELECT game_id, played_at, group_id, rule_name_snapshot, rule_config_snapshot, game_mode FROM games WHERE game_id = ?", (gid,))
             g = lc.fetchone()
             cfg_val = g[4] if isinstance(g[4], str) else json.dumps(g[4], ensure_ascii=False)
@@ -1279,7 +1483,13 @@ def push_games_to_remote(game_ids=None):
                     game_id, played_at, group_id, rule_name_snapshot,
                     rule_config_snapshot, game_mode, is_synced
                 ) VALUES (%s, %s, %s, %s, %s, %s, 1)
-                ON CONFLICT (game_id) DO NOTHING
+                ON CONFLICT (game_id) DO UPDATE SET
+                    played_at = EXCLUDED.played_at,
+                    group_id = EXCLUDED.group_id,
+                    rule_name_snapshot = EXCLUDED.rule_name_snapshot,
+                    rule_config_snapshot = EXCLUDED.rule_config_snapshot,
+                    game_mode = EXCLUDED.game_mode,
+                    is_synced = 1
             """, (g[0], g[1], g[2], g[3], cfg_val, g[5]))
 
             # 2. participants 取得・送信
@@ -1293,7 +1503,6 @@ def push_games_to_remote(game_ids=None):
                         game_id, seat, member_id, player_name_snapshot,
                         final_score, rank, point, was_group_member
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (game_id, seat) DO NOTHING
                 """, (gid, p[0], p[1], p[2], p[3], p[4], p[5], p[6]))
 
             # 3. rounds 取得・送信
@@ -1308,7 +1517,6 @@ def push_games_to_remote(game_ids=None):
                         round_id, game_id, round_index, kyoku_name,
                         honba, riichi_sticks, result_type
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (round_id) DO NOTHING
                 """, (rid, gid, r[1], r[2], r[3], r[4], r[5]))
 
                 # 4. round_seats 取得・送信
@@ -1325,7 +1533,6 @@ def push_games_to_remote(game_ids=None):
                             kyotaku_point, penalty_point, score_delta, chip_delta,
                             han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (round_id, seat) DO NOTHING
                     """, (rid, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
 
             # ローカル側を同期済みに更新
