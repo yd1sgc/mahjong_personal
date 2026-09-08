@@ -80,6 +80,18 @@ def run():
         elif attr.startswith("test_"):
             tests.append((f"test_interruption_recovery.{attr}", obj))
 
+    # 6. test_database2
+    import test_database2
+    for attr in dir(test_database2):
+        if attr.startswith("test_"):
+            tests.append((f"test_database2.{attr}", getattr(test_database2, attr)))
+
+    # 7. test_stats_and_transactions
+    import test_stats_and_transactions
+    for attr in dir(test_stats_and_transactions):
+        if attr.startswith("test_"):
+            tests.append((f"test_stats_and_transactions.{attr}", getattr(test_stats_and_transactions, attr)))
+
     passed = 0
     failed = 0
     print(f"Running {len(tests)} tests...\n")
