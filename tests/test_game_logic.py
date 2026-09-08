@@ -79,6 +79,64 @@ class TestGameLogic:
         assert res is not None
         assert "飛び終了" in res
 
+    def test_check_game_end_tobi_boundary_zero(self):
+        """0点ちょうどのトビ境界値テスト (under_zero / zero_or_less)"""
+        self.setup_method()
+        # 1. under_zero (0点未満で終了): 0点ちょうどは続行可能
+        st.session_state.current_rule_config["detail"]["tobi_end"] = "under_zero"
+        st.session_state.game_state.scores["P4"] = 0
+        assert st.session_state.game_state.check_game_end() is None
+
+        # -100点で終了
+        st.session_state.game_state.scores["P4"] = -100
+        res = st.session_state.game_state.check_game_end()
+        assert res is not None and "飛び終了" in res
+
+        # 2. zero_or_less (0点以下で終了): 0点ちょうどで終了
+        st.session_state.current_rule_config["detail"]["tobi_end"] = "zero_or_less"
+        st.session_state.game_state.scores["P4"] = 0
+        res = st.session_state.game_state.check_game_end()
+        assert res is not None and "飛び終了" in res
+
+    def test_zero_sum_score_conservation_invariant(self):
+        """リーチ・流局・和了・チョンボ・Undoを通じ、総点（持ち点合計＋供託）が10万点を維持する不変量テスト"""
+        self.setup_method()
+        gs = st.session_state.game_state
+
+        def assert_100k():
+            total = sum(gs.scores.values()) + gs.riichi_stick * 1000
+            assert total == 100000, f"Score conservation broken: total={total}, scores={gs.scores}, stick={gs.riichi_stick}"
+
+        assert_100k()
+
+        # 1. P1リーチ宣言
+        gs.declare_riichi("P1")
+        assert_100k()
+
+        # 2. 流局（P1, P2テンパイ）
+        gs.apply_ryukyoku(["P1", "P2"])
+        assert_100k()
+
+        # 3. 東1局1本場: P2リーチ宣言
+        gs.declare_riichi("P2")
+        assert_100k()
+
+        # 4. P3が放銃、P1がロン和了（3900点 + 供託2本回収 + 1本場300点）
+        gs.apply_win("P1", "ron", {"total": 3900}, loser="P3")
+        assert_100k()
+
+        # 5. 東1局2本場: P4ツモ和了 (2000オール + 2本場)
+        gs.apply_win("P4", "tsumo", {"total": 6000})
+        assert_100k()
+
+        # 6. P3チョンボ (満貫払い)
+        gs.apply_chombo("P3")
+        assert_100k()
+
+        # 7. Undo で巻き戻し
+        assert gs.undo_last() is True
+        assert_100k()
+
     def test_check_game_end_agari_yame(self):
         self.setup_method()
         st.session_state.game_state.round_idx = 7 # 南4局

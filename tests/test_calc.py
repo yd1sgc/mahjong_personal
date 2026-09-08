@@ -37,6 +37,82 @@ class TestCalculateScore:
         total, _, _ = calculate_score(5, 30, is_dealer=False, is_tsumo=False)
         assert total == 8000
 
+    def test_2han_40fu_non_dealer_tsumo(self):
+        """2翻40符 子ツモ: 700・1300 (計2700)"""
+        total, dealer_pay, non_dealer_pay = calculate_score(2, 40, is_dealer=False, is_tsumo=True)
+        assert total == 2700
+        assert dealer_pay == 1300
+        assert non_dealer_pay == 700
+
+    def test_1han_40fu_non_dealer_tsumo(self):
+        """1翻40符 子ツモ: 400・700 (計1500)"""
+        total, dealer_pay, non_dealer_pay = calculate_score(1, 40, is_dealer=False, is_tsumo=True)
+        assert total == 1500
+        assert dealer_pay == 700
+        assert non_dealer_pay == 400
+
+    def test_2han_40fu_dealer_tsumo(self):
+        """2翻40符 親ツモ: 1300オール (計3900)"""
+        total, dealer_pay, non_dealer_pay = calculate_score(2, 40, is_dealer=True, is_tsumo=True)
+        assert total == 3900
+        assert dealer_pay == 0
+        assert non_dealer_pay == 1300
+
+    def test_2han_25fu_chitoi_non_dealer_tsumo(self):
+        """七対子 2翻25符 子ツモ: 400・800 (計1600)"""
+        total, dealer_pay, non_dealer_pay = calculate_score(2, 25, is_dealer=False, is_tsumo=True)
+        assert total == 1600
+        assert dealer_pay == 800
+        assert non_dealer_pay == 400
+
+    def test_2han_25fu_chitoi_dealer_tsumo(self):
+        """七対子 2翻25符 親ツモ: 800オール (計2400)"""
+        total, dealer_pay, non_dealer_pay = calculate_score(2, 25, is_dealer=True, is_tsumo=True)
+        assert total == 2400
+        assert dealer_pay == 0
+        assert non_dealer_pay == 800
+
+    def test_2han_25fu_chitoi_non_dealer_ron(self):
+        """七対子 2翻25符 子ロン: 1600"""
+        total, _, _ = calculate_score(2, 25, is_dealer=False, is_tsumo=False)
+        assert total == 1600
+
+    def test_2han_25fu_chitoi_dealer_ron(self):
+        """七対子 2翻25符 親ロン: 2400"""
+        total, _, _ = calculate_score(2, 25, is_dealer=True, is_tsumo=False)
+        assert total == 2400
+
+    def test_1han_50fu_non_dealer_ron(self):
+        """1翻50符 子ロン: 1600"""
+        total, _, _ = calculate_score(1, 50, is_dealer=False, is_tsumo=False)
+        assert total == 1600
+
+    def test_1han_50fu_dealer_ron(self):
+        """1翻50符 親ロン: 2400"""
+        total, _, _ = calculate_score(1, 50, is_dealer=True, is_tsumo=False)
+        assert total == 2400
+
+    def test_4han_30fu_non_mangan_cutoff(self):
+        """4翻30符: 現行ロジックは切り上げなし (子7700点 / 親11600点)"""
+        total, _, _ = calculate_score(4, 30, is_dealer=False, is_tsumo=False)
+        assert total == 7700
+        total_dealer, _, _ = calculate_score(4, 30, is_dealer=True, is_tsumo=False)
+        assert total_dealer == 11600
+
+    def test_3han_60fu_non_mangan_cutoff(self):
+        """3翻60符: 現行ロジックは切り上げなし (子7700点 / 親11600点)"""
+        total, _, _ = calculate_score(3, 60, is_dealer=False, is_tsumo=False)
+        assert total == 7700
+        total_dealer, _, _ = calculate_score(3, 60, is_dealer=True, is_tsumo=False)
+        assert total_dealer == 11600
+
+    def test_4han_40fu_mangan_reach(self):
+        """4翻40符: 満貫到達 (子8000点 / 親12000点)"""
+        total, _, _ = calculate_score(4, 40, is_dealer=False, is_tsumo=False)
+        assert total == 8000
+        total_dealer, _, _ = calculate_score(4, 40, is_dealer=True, is_tsumo=False)
+        assert total_dealer == 12000
+
     def test_haneman_dealer_ron(self):
         total, _, _ = calculate_score(6, 30, is_dealer=True, is_tsumo=False)
         assert total == 18000

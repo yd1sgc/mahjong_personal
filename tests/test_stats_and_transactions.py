@@ -234,3 +234,63 @@ def test_group_and_guest_filter_logic():
         assert not df_with_guest.empty
         assert len(df_with_guest) == 4
         assert "ゲストX" in df_with_guest["名前"].values
+
+
+def test_zero_division_and_empty_stats_safety():
+    """データが空、または和了・放銃・流局が0回の場合でもZeroDivisionErrorが発生しないこと"""
+    with _temp_test_db():
+        # 1. 完全空DBでの集計
+        df_empty_game = db.get_game_stats_summary()
+        assert df_empty_game.empty
+
+        df_empty_round, n_games = db.get_round_stats_summary()
+        assert df_empty_round.empty
+        assert n_games == 0
+
+        # 2. 誰も和了・放銃していない流局のみの対局（全員和了0、放銃0）
+        m1 = db.add_member("全員流局A")
+        m2 = db.add_member("全員流局B")
+        m3 = db.add_member("全員流局C")
+        m4 = db.add_member("全員流局D")
+        grp_id = db.add_group("流局グループ", "m_league")
+
+        payload = {
+            "played_at": "2026-09-03 10:00:00",
+            "group_id": grp_id,
+            "rule_id": "m_league",
+            "rule_name_snapshot": "Mリーグルール",
+            "rule_config_snapshot": {},
+            "game_mode": "detail",
+            "participants": [
+                {"seat": 1, "member_id": m1, "player_name_snapshot": "全員流局A", "final_score": 25000, "rank": 1, "point": 0.0, "was_group_member": 1},
+                {"seat": 2, "member_id": m2, "player_name_snapshot": "全員流局B", "final_score": 25000, "rank": 2, "point": 0.0, "was_group_member": 1},
+                {"seat": 3, "member_id": m3, "player_name_snapshot": "全員流局C", "final_score": 25000, "rank": 3, "point": 0.0, "was_group_member": 1},
+                {"seat": 4, "member_id": m4, "player_name_snapshot": "全員流局D", "final_score": 25000, "rank": 4, "point": 0.0, "was_group_member": 1},
+            ],
+            "rounds": [
+                {
+                    "round_index": 0,
+                    "kyoku_name": "東1局",
+                    "honba": 0,
+                    "riichi_sticks": 0,
+                    "result_type": "ryukyoku",
+                    "seats": [
+                        {"seat": 1, "member_id": m1, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0, "han": 0, "fu": 0},
+                        {"seat": 2, "member_id": m2, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0, "han": 0, "fu": 0},
+                        {"seat": 3, "member_id": m3, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0, "han": 0, "fu": 0},
+                        {"seat": 4, "member_id": m4, "score_delta": 0, "base_point": 0, "is_winner": 0, "is_loser": 0, "is_riichi": 0, "is_furo": 0, "is_tenpai": 0, "han": 0, "fu": 0},
+                    ]
+                }
+            ]
+        }
+        db.save_game_record(payload)
+
+        # 和了率・放銃率などのゼロ除算が発生せず正常に計算されること
+        df_round, n_games = db.get_round_stats_summary(group_id=grp_id)
+        assert not df_round.empty
+        assert n_games == 1
+        r1 = df_round.iloc[0]
+        assert r1["和了率"] == 0.0
+        assert r1["放銃率"] == 0.0
+        assert r1["平均和了"] == 0
+        assert r1["平均放銃"] == 0
