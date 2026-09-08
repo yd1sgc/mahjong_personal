@@ -1,10 +1,18 @@
 # Directory Structure Map
 
-- src/: アプリケーションのコアロジック（DB操作、計算、UIビュー）
-- tests/: テストコード（テスト実行は `python tests/run_tests.py`）
-- scripts/: DBマイグレーションなどの運用スクリプト
-- archive/: 過去の不要なスクリプトや一時データ（探索・読込不要）
-- .gemini/: AIエージェント設定（プロジェクト固有ルールとフック定義）
+- `app.py`: Streamlit アプリケーションのエントリーポイント
+- `local_mahjong_v2_new.db`: 現行の本番SQLiteデータベース（正本）
+- `src/`: アプリケーションのコアロジック（DB操作、計算、UIビュー）
+- `tests/`: 自動テストスイート（テスト実行は `python tests/run_tests.py`）
+- `scripts/`: 日常のデータ保守・バックアップ・同期運用スクリプト群
+- `migrations/`: 本番・リモート向けDBスキーマ定義SQL
+- `docs/`: システム設計・引継・仕様書
+- `archive/`: 過去の不要なスクリプトや一時データ、過去DBの退避先（**AI探索・読込不要**）
+  - `archive/db/`: 移行中間段階の過去DB
+  - `archive/debug/`: 過去の調査ダンプ・一時ファイル
+  - `archive/scratch/`: 過去の検証・分析スクリプト
+  - `archive/scripts/`: 完了済み単発マイグレーションスクリプト
+- `.gemini/`: AIエージェント設定（プロジェクト固有ルールとフック定義）
 
 # AI Agent Testing & Safety Protocol (必読)
 1. **コード変更後の全テスト実行義務**:
@@ -23,6 +31,12 @@
 - **Phase 5 完了**: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定完了。
 
 # TODO (Next Actions)
+- [x] AI段階的開示（Progressive Disclosure）向けドキュメント整備
+  - [x] `src/README.md` のタイポ修正とV2モジュール責務の明記
+  - [x] `scripts/README.md` の残存運用スクリプト全件網羅
+  - [x] `archive/README.md` の新設（AI探索不要宣言と分類マップ）
+  - [x] `README.md`（ルート）の拡充（システム概要、起動、テスト、フォルダー構造）
+  - [x] `tests/run_tests.py` の実行確認（全件PASS）
 - [x] 大規模開発終了に伴うフォルダー整理と最新DBバックアップ
   - [x] 最新本番DB（local_mahjong_v2_new.db）および旧V1バックアップを OneDrive (C:\Users\segu1\OneDrive\mahjong_personal\麻雀バックアップ) へコピー退避
   - [x] 0バイト空DB（local_mahjong.db, mahjong_local.db, src/local_mahjong.db）およびキャッシュの削除
@@ -31,16 +45,9 @@
   - [x] scratch/ 配下の検証ファイル群を archive/scratch/ へ移動
   - [x] scripts/ 配下の単発移行スクリプトを archive/scripts/ へ移動
   - [x] tests/run_tests.py の実行確認（全件PASS）
-- [x] Phase 1: `src/database2.py` を新DB構造（UUID v7、`games`・`game_participants`・`rounds`・`round_seats`）専用に刷新
-- [x] Phase 2: `src/game_logic.py` および対局画面（`src/views/game.py`, `src/views/setup.py`）のハードコード撤廃、`round_seats` 生成・新保存API連携
-- [x] Phase 3: `src/views/stats.py` の集計ロジックを正規化SQLクエリへ全面置換
-- [x] Phase 4: 分散ハイブリッド同期（選択的Push & 全件Pull）の実装、テスト層の刷新、`tests/run_tests.py` 全38件 0 failed 達成
-- [x] Phase 5: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定
-- [x] Supabase本番マイグレーション実行完了、オンライン既存27件のみの選択的Push同期完了（ローカル249件のローカル限定保護）
-- [x] app.py のローカルDBパスを local_mahjong_v2_new.db に追従、未同期対局表示バグの解消
-- [x] オンライン環境における総合ポイント推移グラフ（Decimal型によるJSONシリアライズ不可不具合）および相性マトリクス（型不一致による着色無効化、五十音順初期選択によるスカスカ表示）の修正
 
 # Changelog (Recent History)
+- 2026-09-08: AIエージェント段階的開示（Progressive Disclosure）向けドキュメント体系を再整備。(1) `src/README.md` のタイポを修正しV2スキーマ対応各モジュールの責務を明確化。(2) `scripts/README.md` に残存運用スクリプト5件（safety_hook, backup, check, sync等）の仕様・実行方法を網羅。(3) `archive/README.md` を新設し「AI探索不要」の原則と隔離内容を明記。(4) ルートの `README.md` を1行から正式ドキュメント（起動手順・テスト・全体マップ・開発ガイドライン）へ全面拡充。(5) `docs/AI_HANDOVER.md` の Directory Structure Map を最新のフォルダー構成に更新。tests/run_tests.py 全38件 ALL PASS を確認。
 - 2026-09-08: 大規模開発（V2移行・同期エンジン・UI/グラフ最適化）完了に伴うフォルダー構造の整理および最新DBバックアップを実施。(1) 最新のローカル本番DB（local_mahjong_v2_new.db: 868KB）および旧V1バックアップを OneDrive (C:\Users\segu1\OneDrive\mahjong_personal\麻雀バックアップ\) へ安全にコピー退避。(2) 0バイト空DB（local_mahjong.db, mahjong_local.db, src/local_mahjong.db）および一時キャッシュの完全破棄。(3) 過去中間DB（archive/db/）、デバッグ用データ・スクリプト（archive/debug/）、検証ファイル群（archive/scratch/）、単発移行スクリプト群（archive/scripts/）を archive/ 配下に系統的に隔離・分類。scripts/ には日常運用スクリプト（safety_hook, backup, sync, check等）のみを保持。全38件のテスト（tests/run_tests.py）が ALL PASS することを確認。
 - 2026-09-08: オンラインDB（PostgreSQL）で NUMERIC カラムが Decimal 型として返されることに起因する2つの不具合を修正。(1) 総合ポイント推移グラフで `Decimal is not JSON serializable` による描画破撻を解消するため、`database2.py` の `_fetch_df` および `get_results_data`、`stats.py` のチャート生成処理で `float` キャストを一貫して保証。(2) 相性マトリクスでデータ型不一致により `background_gradient` の着色が完全に無効化されていた問題を解消し、初期表示メンバーを五十音順から対戦数（試合数）上位5名に変更、0pt差を白とする正負対称カラーバー（`vmin=-max_abs, vmax=max_abs`）を適用。tests/run_tests.py 全38件 ALL PASS を確認。
 - 2026-09-07: Supabase本番DBへ V2 スキーマ（UUID v7・完全縦持ち）を適用。旧全9テーブル（479レコード）をローカルに完全バックアップ（archive/supabase_v1_backup.json）後、オンラインに存在していた27件のみを選択的Push同期し、ローカルの249件はローカル限定として保護。app.py の参照DBパス修正および成績画面での未同期データ表示クラッシュを修正。tests/run_tests.py 全38件 ALL PASS を確認。
