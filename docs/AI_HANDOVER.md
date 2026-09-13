@@ -31,6 +31,14 @@
 - **Phase 5 完了**: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定完了。
 
 # TODO (Next Actions)
+- [x] ローカルDBのルールテンプレートをオンラインDB（Supabase）の7件および詳細設定に完全一致化
+  - [x] 不要な5件のローカル独自ルールの削除
+  - [x] オンライン側7件（詳細設定・レート換算・補足メモ含む）の一括インポート・Upsert
+  - [x] 全テスト（tests/run_tests.py）の実行確認（63 passed, 0 failed）
+- [x] ローカルDBおよびオンラインDBの同期整合性・二重記録（重複試合）調査
+  - [x] ローカルDB（local_mahjong_v2_new.db）内の重複試合（同一日時・参加者・素点）の検出（重複0件確認）
+  - [x] ローカルDB内の最新ルール一覧の確認（ローカル11件、リモート7件を検出）
+  - [x] オンラインDB（Supabase）とのゲームID体系・未同期状態の照合（ID不一致重複0件、全27件完全一致、全ID UUID v7統一を確認）
 - [x] AI段階的開示（Progressive Disclosure）向けドキュメント整備
   - [x] `src/README.md` のタイポ修正とV2モジュール責務の明記
   - [x] `scripts/README.md` の残存運用スクリプト全件網羅
@@ -47,6 +55,8 @@
   - [x] tests/run_tests.py の実行確認（全件PASS）
 
 # Changelog (Recent History)
+- 2026-09-13: オンラインDB（Supabase）の最新ルール7件（麻雀部v4、親族麻雀v4、連盟公式、Mリーグ等）および詳細設定（本場点・立直棒・ノーテン罰符・ダブロン・途中流局・レート換算・ハウスルール補足メモ等）をローカルDB（local_mahjong_v2_new.db）へ不可分反映。ローカル独自だった未同期5件を安全に削除し、ローカルとオンラインのルールテンプレート構成を完全一致させた。全63件の自動テスト（tests/run_tests.py）が ALL PASS することを確認。
+- 2026-09-13: ローカルDB（local_mahjong_v2_new.db）およびオンラインDB（Supabase）の同期状態・二重記録・ルールの調査を実施。(1) ローカルDB内276試合の対局日時・参加者・素点照合により、重複登録（二重記録）は0件であることを確認。(2) ゲームIDはローカル・リモート共に旧整数IDは全廃されており、全件UUID v7に統一済み。(3) オンライン登録済みの27試合はローカルの同期済み27試合とUUID・内容ともに完全一致しており、IDズレによる二重記録は発生していない。(4) ルールテンプレートはローカル11件、リモート7件を検出。未同期のルール5件（一般10-30、ゴットー (5-10)、ノーウマ・オカなし、一般アリアリ（ゴットー）、最高位戦日本プロ麻雀協会）は全体同期実行により安全にUpsert同期可能であることを確認。
 - 2026-09-09: データ管理および過去対局の局修正機能を新V2正規化スキーマ（UUID v7・`round_seats` 縦持ち）に完全追従・刷新。全テスト数を全58件から全63件（0 failed）へ拡充。(1) `src/database2.py`: 局修正用不可分置換API（`update_game_record_atomic`）、基本情報不可分更新API（`update_game_basic_info`）、CSV取込時のUUID自動解決およびウマオカpt自動算出（`import_games_from_df`）、局詳細CSV出力（`load_all_rounds` -> `get_rounds_data`）、DB更新直前の自動物理スナップショット退避（`backup_local_db_snapshot`）、およびオンラインへの不可分上書きPush（`push_games_to_remote`）を実装。(2) `src/views/round_edit.py`: UUID対応、ダブロン（複数和了）の入力・復元・連鎖再計算対応、10万点ゼロサム検証および差分プレビュー表示を実装。(3) `src/views/data_manage.py`: 局修正および基本情報編集UIの正式統合、オンライン環境（`IS_LOCAL == False`）における編集操作制限と案内メッセージ設置。(4) `tests/`: 局修正ダブロン再計算、CSV取込UUID解決、局詳細エクスポート、基本情報不可分更新の単体・統合テストを追加し全63件 ALL PASS を確認。
 - 2026-09-09: 点数計算・対局進行・統計集計のエッジケースおよび不変量テストを徹底補強し、テスト数を全43件から全58件（0 failed）へ拡充。(1) `tests/test_calc.py` に端数切り上げツモ（40符の700/1300、400/700、1300オール）、七対子25符（400/800、1600、2400）、高符（50符）、および切り上げ満貫境界（4翻30符・3翻60符が原則通り7700点/11600点、4翻40符が満貫8000点/12000点）の検証テストを追加。(2) `tests/test_game_logic.py` に0点ちょうどのトビ境界テスト（0点未満終了ルールでの続行確認、0点以下終了ルールでのトビ確認）、および連続対局進行における点棒の10万点ゼロサム不変量テスト（`test_zero_sum_score_conservation_invariant`）を追加。(3) `tests/test_stats_and_transactions.py` にデータ空・和了0・放銃0時のゼロ除算耐性テスト（`test_zero_division_and_empty_stats_safety`）を追加。tests/run_tests.py 全58件 ALL PASS を確認。
 - 2026-09-09: テストスイートの欠落・死蔵を解消し、テスト数を全38件から全43件へ拡充。(1) pytest fixture 依存で死蔵されていた `tests/test_database2.py` をスタンドアロン関数形式へ改修し現行V2スキーマ対応。(2) 新規 `tests/test_stats_and_transactions.py` を新設し、不可分保存トランザクション・ドラフト確実消去、半荘成績SQL集計、局スタッツSQL集計、およびグループ・ゲスト絞り込みフィルターの検証テストを追加。(3) `tests/run_tests.py` に両テストを統合し、全43件 ALL PASS（0 failed）を達成。
