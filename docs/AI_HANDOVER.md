@@ -31,6 +31,13 @@
 - **Phase 5 完了**: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定完了。
 
 # TODO (Next Actions)
+- [x] ローカルDB（local_mahjong_v2_new.db）への役満記録テーブル（yakuman_records）追加および検証
+  - [x] yakuman_records テーブルおよび3種インデックスの作成（第3正規形準拠）
+  - [x] src/database2.py の init_local_db() への DDL 追記
+  - [x] 過去の実績対局5件（ルイ:緑一色、リョウト:大三元×2、マサキ:四暗刻、オッチャン:大三元）の特定および本番登録
+  - [x] 全テスト（tests/run_tests.py）の実行確認（63 passed, 0 failed）
+- [ ] 役満記録機能のUIおよび集計ロジック実装（対局詳細表示・個人通算役満スタッツ）
+- [ ] リモートDB（Supabase）への yakuman_records マイグレーション適用
 - [x] ローカルDBのルールテンプレートをオンラインDB（Supabase）の7件および詳細設定に完全一致化
   - [x] 不要な5件のローカル独自ルールの削除
   - [x] オンライン側7件（詳細設定・レート換算・補足メモ含む）の一括インポート・Upsert
@@ -55,6 +62,7 @@
   - [x] tests/run_tests.py の実行確認（全件PASS）
 
 # Changelog (Recent History)
+- 2026-09-17: ローカルDB（local_mahjong_v2_new.db）へ第3正規形準拠の新テーブル `yakuman_records` および3種の外部キーインデックスを作成。過去の役満対局5件（2024-01-04 ルイ:緑一色、2025-01-01 リョウト:大三元、2025-01-02 マサキ:四暗刻、2025-01-05 リョウト:大三元、2026-09-05 オッチャン:大三元[東2局3本場]）を特定し、正式にレコード登録を完了。全63件の自動テスト（tests/run_tests.py）が ALL PASS することを確認。
 - 2026-09-13: オンラインDB（Supabase）の最新ルール7件（麻雀部v4、親族麻雀v4、連盟公式、Mリーグ等）および詳細設定（本場点・立直棒・ノーテン罰符・ダブロン・途中流局・レート換算・ハウスルール補足メモ等）をローカルDB（local_mahjong_v2_new.db）へ不可分反映。ローカル独自だった未同期5件を安全に削除し、ローカルとオンラインのルールテンプレート構成を完全一致させた。全63件の自動テスト（tests/run_tests.py）が ALL PASS することを確認。
 - 2026-09-13: ローカルDB（local_mahjong_v2_new.db）およびオンラインDB（Supabase）の同期状態・二重記録・ルールの調査を実施。(1) ローカルDB内276試合の対局日時・参加者・素点照合により、重複登録（二重記録）は0件であることを確認。(2) ゲームIDはローカル・リモート共に旧整数IDは全廃されており、全件UUID v7に統一済み。(3) オンライン登録済みの27試合はローカルの同期済み27試合とUUID・内容ともに完全一致しており、IDズレによる二重記録は発生していない。(4) ルールテンプレートはローカル11件、リモート7件を検出。未同期のルール5件（一般10-30、ゴットー (5-10)、ノーウマ・オカなし、一般アリアリ（ゴットー）、最高位戦日本プロ麻雀協会）は全体同期実行により安全にUpsert同期可能であることを確認。
 - 2026-09-09: データ管理および過去対局の局修正機能を新V2正規化スキーマ（UUID v7・`round_seats` 縦持ち）に完全追従・刷新。全テスト数を全58件から全63件（0 failed）へ拡充。(1) `src/database2.py`: 局修正用不可分置換API（`update_game_record_atomic`）、基本情報不可分更新API（`update_game_basic_info`）、CSV取込時のUUID自動解決およびウマオカpt自動算出（`import_games_from_df`）、局詳細CSV出力（`load_all_rounds` -> `get_rounds_data`）、DB更新直前の自動物理スナップショット退避（`backup_local_db_snapshot`）、およびオンラインへの不可分上書きPush（`push_games_to_remote`）を実装。(2) `src/views/round_edit.py`: UUID対応、ダブロン（複数和了）の入力・復元・連鎖再計算対応、10万点ゼロサム検証および差分プレビュー表示を実装。(3) `src/views/data_manage.py`: 局修正および基本情報編集UIの正式統合、オンライン環境（`IS_LOCAL == False`）における編集操作制限と案内メッセージ設置。(4) `tests/`: 局修正ダブロン再計算、CSV取込UUID解決、局詳細エクスポート、基本情報不可分更新の単体・統合テストを追加し全63件 ALL PASS を確認。

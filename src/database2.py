@@ -1075,6 +1075,20 @@ def init_local_db():
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS yakuman_records (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL,
+            round_id TEXT,
+            member_id TEXT NOT NULL,
+            yakuman_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE,
+            FOREIGN KEY (round_id) REFERENCES rounds(round_id) ON DELETE CASCADE,
+            FOREIGN KEY (member_id) REFERENCES members(member_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_yakuman_game_id ON yakuman_records(game_id);
+        CREATE INDEX IF NOT EXISTS idx_yakuman_round_id ON yakuman_records(round_id);
+        CREATE INDEX IF NOT EXISTS idx_yakuman_member_id ON yakuman_records(member_id);
         """)
         # 既存 games テーブルへの sync_target カラム追加確認
         c.execute("PRAGMA table_info(games)")
