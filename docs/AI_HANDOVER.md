@@ -31,6 +31,10 @@
 - **Phase 5 完了**: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定完了。
 
 # TODO (Next Actions)
+- [x] 誤同期テストデータ（2026-09-18 オッチャン、リョウト、マサキ、ユウダイ 各+0.0pt）のローカル・リモート完全削除
+  - [x] src/database2.py の delete_game に yakuman_records 削除追加
+  - [x] ローカルおよびオンラインからの該当 game_id 特定と削除実行（物理バックアップ自動退避含む）
+  - [x] 削除完了確認（残存0件）および tests/run_tests.py 全件 PASS 確認（65 passed, 0 failed）
 - [x] タイムゾーン混在（Mixed timezones detected）不具合の修正
   - [x] src/database2.py の pull_games_from_remote における played_at の正規化（タイムゾーンオフセット除去）
   - [x] src/database2.py および src/views/stats.py での安全な naive datetime パース関数の適用（clean_datetime_series）
@@ -76,6 +80,7 @@
   - [x] tests/run_tests.py の実行確認（全件PASS）
 
 # Changelog (Recent History)
+- 2026-09-18: 誤同期テストデータ（2026-09-18 オッチャン、リョウト、マサキ、ユウダイ 各+0.0pt、game_id: `f30c5a5d-3672-4056-86da-df973ac5d368`）をローカルDBおよびオンラインDB（Supabase）から完全削除。(1) `src/database2.py`: `delete_game` 関数に `yakuman_records` 削除処理を追加。(2) ローカルDB事前スナップショット（`archive/db/backup_before_edit_20260918_230917.db`）を自動作成。(3) ローカル・リモート双方の当該ゲームレコードおよび子レコード（participants, rounds, round_seats）を不可分削除（残存0件確認）。tests/run_tests.py 全65件 ALL PASS を確認。
 - 2026-09-18: タイムゾーン混在（Mixed timezones detected）によるパース不具合を修正。(1) `src/database2.py`: `clean_datetime_series` ヘルパーを新設し、`get_games_data` および `get_results_data` でタイムゾーン表記（`+00:00`, `Z` 等）を除去して一貫した naive datetime にパース、`pull_games_from_remote` でローカル保存時に `played_at` を `YYYY-MM-DD HH:MM:SS` に正規化。(2) `src/views/stats.py`: 未同期一覧の日時パースを `clean_datetime_series` へ統一。(3) `tests/test_supabase_sync.py`: タイムゾーン混在日時の Pull および DataFrame 取得がクラッシュしないテスト（`test_mixed_timezones_pull_and_query_safety`）を追加。tests/run_tests.py 全65件 ALL PASS を確認。
 - 2026-09-18: pull_games_from_remote における Decimal 型バインド不具合を修正。(1) `src/database2.py`: `sqlite3.register_adapter(Decimal, float)` を登録し、`game_participants` 挿入時の `point` 列および各数値列を明示的に型キャスト。(2) `tests/test_supabase_sync.py`: モックに Decimal 型を設定し Pull 処理の型適応を自動検証。tests/run_tests.py 全64件 ALL PASS を確認。
 - 2026-09-18: 役満記録（yakuman_records）のオンライン双方向同期対応を実施。(1) `src/database2.py`: `push_games_to_remote` に該当対局の役満送信およびリモート側事前削除処理を追加、`pull_games_from_remote` にリモートからの役満受信およびローカル保存（`ON CONFLICT (id) DO NOTHING`）を追加。(2) `migrations/supabase_migration_v2.sql` に `yakuman_records` テーブルおよび3種の外部キーインデックス定義を追記。(3) `DESIGN.md` のデータモデルに 3.9 `yakuman_records` を追加。(4) `tests/test_supabase_sync.py` に役満同期のPush/Pull検証テストを追加し、`tests/run_tests.py` の全64件 ALL PASS（0 failed）を確認。

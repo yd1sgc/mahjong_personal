@@ -256,6 +256,9 @@ def delete_game(game_id: str):
     ph = "?" if IS_LOCAL else "%s"
     with _db() as conn:
         c = conn.cursor()
+        # 0. yakuman_records 削除
+        c.execute(f"DELETE FROM yakuman_records WHERE game_id = {ph}", (game_id,))
+
         # 1. 局IDを取得
         c.execute(f"SELECT round_id FROM rounds WHERE game_id = {ph}", (game_id,))
         round_ids = [r[0] for r in c.fetchall()]
