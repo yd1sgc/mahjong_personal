@@ -219,3 +219,93 @@ def test_yakuman_records_sync_push():
         if os.path.exists(db_path):
             os.remove(db_path)
 
+
+def test_mixed_timezones_pull_and_query_safety():
+    """タイムゾーン付き日時とタイムゾーンなし日時が混在しても get_games_data や get_results_data がクラッシュしないこと"""
+    db_path = _create_v2_test_local_db()
+
+    mock_remote_conn = MagicMock()
+    mock_remote_cursor = MagicMock()
+    mock_remote_conn.cursor.return_value = mock_remote_cursor
+
+    remote_gid = db.generate_uuid7()
+
+    try:
+        # 1. ローカル直接登録（タイムゾーンなしの日時文字列）
+        m1 = db.add_member("プレイヤーA")
+        m2 = db.add_member("プレイヤーB")
+        m3 = db.add_member("プレイヤーC")
+        m4 = db.add_member("プレイヤーD")
+        grp_id = db.add_group("テストグループ", "m_league")
+
+        # リモート対局 (TIMESTAMPTZ の +00:00 付き文字列)
+        mock_remote_cursor.fetchall.side_effect = [
+            # 1. games 一覧 (+00:00 付き)
+            [(remote_gid, "2026-09-18 12:00:00+00:00", "all", "Mリーグ", "{}", "detail")],
+            # 2. participants (実在する member_id を指定)
+            [
+                (1, m1, "プレイヤーA", 35000, 1, Decimal("55.0"), 1),
+                (2, m2, "プレイヤーB", 25000, 2, Decimal("5.0"), 1),
+                (3, m3, "プレイヤーC", 22000, 3, Decimal("-18.0"), 1),
+                (4, m4, "プレイヤーD", 18000, 4, Decimal("-42.0"), 1),
+            ],
+            # 3. rounds
+            [],
+            # 4. yakuman_records
+            []
+        ]
+
+        @contextmanager
+        def mock_remote_db_cm():
+            yield mock_remote_conn
+
+        g1 = {
+            "group_id": grp_id, "rule_id": "m_league", "rule_name_snapshot": "Mリーグ",
+            "rule_config_snapshot": {}, "played_at": "2026-09-18 10:00:00",
+            "sync_target": 1
+        }
+        parts1 = [
+            {"seat": 1, "member_id": m1, "player_name_snapshot": "プレイヤーA", "final_score": 40000, "rank": 1, "point": 50.0},
+            {"seat": 2, "member_id": m2, "player_name_snapshot": "プレイヤーB", "final_score": 30000, "rank": 2, "point": 10.0},
+            {"seat": 3, "member_id": m3, "player_name_snapshot": "プレイヤーC", "final_score": 20000, "rank": 3, "point": -10.0},
+            {"seat": 4, "member_id": m4, "player_name_snapshot": "プレイヤーD", "final_score": 10000, "rank": 4, "point": -30.0},
+        ]
+        db.save_game_record(g1, parts1, [])
+
+        # 2. リモートからタイムゾーン付き対局を Pull
+        with patch("database2.IS_LOCAL", True), \
+             patch("database2.SQLITE_PATH", db_path), \
+             patch("database2._remote_db", mock_remote_db_cm):
+
+            pulled = db.pull_games_from_remote()
+            assert pulled == 1
+
+            # ローカル保存時にタイムゾーンオフセットが正規化されていること
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("SELECT played_at FROM games WHERE game_id = ?", (remote_gid,))
+            saved_date_str = c.fetchone()[0]
+            assert saved_date_str == "2026-09-18 12:00:00"
+            conn.close()
+
+            # 3. 過去に混在してしまった場合を想定し、DBに強制的に +00:00 文字列を再設定しても読み込みできることを検証
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("UPDATE games SET played_at = '2026-09-18 12:00:00+00:00' WHERE game_id = ?", (remote_gid,))
+            conn.commit()
+            conn.close()
+
+            # get_games_data が Mixed timezones detected で落ちないこと
+            df_games = db.get_games_data()
+            assert len(df_games) == 2
+            assert df_games['date'].dtype.kind == 'M'  # datetime64 型
+
+            # get_results_data がクラッシュしないこと
+            df_results = db.get_results_data()
+            assert len(df_results) == 8
+            assert df_results['date'].dtype.kind == 'M'
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+

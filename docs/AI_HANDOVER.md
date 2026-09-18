@@ -31,6 +31,11 @@
 - **Phase 5 完了**: リモートDB（Supabase PostgreSQL）向け追従マイグレーションSQL（`migrations/supabase_migration_v2.sql`）の策定完了。
 
 # TODO (Next Actions)
+- [x] タイムゾーン混在（Mixed timezones detected）不具合の修正
+  - [x] src/database2.py の pull_games_from_remote における played_at の正規化（タイムゾーンオフセット除去）
+  - [x] src/database2.py および src/views/stats.py での安全な naive datetime パース関数の適用（clean_datetime_series）
+  - [x] tests/test_supabase_sync.py へのタイムゾーン混在パース検証テスト追加
+  - [x] tests/run_tests.py 全件 PASS 確認（65 passed, 0 failed）
 - [x] pull_games_from_remote における Decimal バインド不具合の修正
   - [x] src/database2.py への sqlite3.register_adapter(Decimal, float) 登録および明示的キャスト
   - [x] tests/test_supabase_sync.py への Decimal 型検証テスト追加
@@ -71,10 +76,10 @@
   - [x] tests/run_tests.py の実行確認（全件PASS）
 
 # Changelog (Recent History)
+- 2026-09-18: タイムゾーン混在（Mixed timezones detected）によるパース不具合を修正。(1) `src/database2.py`: `clean_datetime_series` ヘルパーを新設し、`get_games_data` および `get_results_data` でタイムゾーン表記（`+00:00`, `Z` 等）を除去して一貫した naive datetime にパース、`pull_games_from_remote` でローカル保存時に `played_at` を `YYYY-MM-DD HH:MM:SS` に正規化。(2) `src/views/stats.py`: 未同期一覧の日時パースを `clean_datetime_series` へ統一。(3) `tests/test_supabase_sync.py`: タイムゾーン混在日時の Pull および DataFrame 取得がクラッシュしないテスト（`test_mixed_timezones_pull_and_query_safety`）を追加。tests/run_tests.py 全65件 ALL PASS を確認。
 - 2026-09-18: pull_games_from_remote における Decimal 型バインド不具合を修正。(1) `src/database2.py`: `sqlite3.register_adapter(Decimal, float)` を登録し、`game_participants` 挿入時の `point` 列および各数値列を明示的に型キャスト。(2) `tests/test_supabase_sync.py`: モックに Decimal 型を設定し Pull 処理の型適応を自動検証。tests/run_tests.py 全64件 ALL PASS を確認。
 - 2026-09-18: 役満記録（yakuman_records）のオンライン双方向同期対応を実施。(1) `src/database2.py`: `push_games_to_remote` に該当対局の役満送信およびリモート側事前削除処理を追加、`pull_games_from_remote` にリモートからの役満受信およびローカル保存（`ON CONFLICT (id) DO NOTHING`）を追加。(2) `migrations/supabase_migration_v2.sql` に `yakuman_records` テーブルおよび3種の外部キーインデックス定義を追記。(3) `DESIGN.md` のデータモデルに 3.9 `yakuman_records` を追加。(4) `tests/test_supabase_sync.py` に役満同期のPush/Pull検証テストを追加し、`tests/run_tests.py` の全64件 ALL PASS（0 failed）を確認。
 
-- 2026-09-18: 役満記録（yakuman_records）のオンライン双方向同期対応を実施。(1) `src/database2.py`: `push_games_to_remote` に該当対局の役満送信およびリモート側事前削除処理を追加、`pull_games_from_remote` にリモートからの役満受信およびローカル保存（`ON CONFLICT (id) DO NOTHING`）を追加。(2) `migrations/supabase_migration_v2.sql` に `yakuman_records` テーブルおよび3種の外部キーインデックス定義を追記。(3) `DESIGN.md` のデータモデルに 3.9 `yakuman_records` を追加。(4) `tests/test_supabase_sync.py` に役満同期のPush/Pull検証テストを追加し、`tests/run_tests.py` の全64件 ALL PASS（0 failed）を確認。
 - 2026-09-17: ローカルDB（local_mahjong_v2_new.db）へ第3正規形準拠の新テーブル `yakuman_records` および3種の外部キーインデックスを作成。過去の役満対局5件（2024-01-04 ルイ:緑一色、2025-01-01 リョウト:大三元、2025-01-02 マサキ:四暗刻、2025-01-05 リョウト:大三元、2026-09-05 オッチャン:大三元[東2局3本場]）を特定し、正式にレコード登録を完了。全63件の自動テスト（tests/run_tests.py）が ALL PASS することを確認。
 - 2026-09-13: オンラインDB（Supabase）の最新ルール7件（麻雀部v4、親族麻雀v4、連盟公式、Mリーグ等）および詳細設定（本場点・立直棒・ノーテン罰符・ダブロン・途中流局・レート換算・ハウスルール補足メモ等）をローカルDB（local_mahjong_v2_new.db）へ不可分反映。ローカル独自だった未同期5件を安全に削除し、ローカルとオンラインのルールテンプレート構成を完全一致させた。全63件の自動テスト（tests/run_tests.py）が ALL PASS することを確認。
 - 2026-09-13: ローカルDB（local_mahjong_v2_new.db）およびオンラインDB（Supabase）の同期状態・二重記録・ルールの調査を実施。(1) ローカルDB内276試合の対局日時・参加者・素点照合により、重複登録（二重記録）は0件であることを確認。(2) ゲームIDはローカル・リモート共に旧整数IDは全廃されており、全件UUID v7に統一済み。(3) オンライン登録済みの27試合はローカルの同期済み27試合とUUID・内容ともに完全一致しており、IDズレによる二重記録は発生していない。(4) ルールテンプレートはローカル11件、リモート7件を検出。未同期のルール5件（一般10-30、ゴットー (5-10)、ノーウマ・オカなし、一般アリアリ（ゴットー）、最高位戦日本プロ麻雀協会）は全体同期実行により安全にUpsert同期可能であることを確認。

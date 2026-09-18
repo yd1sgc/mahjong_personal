@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -10,6 +11,16 @@ from datetime import datetime
 
 # SQLite が Decimal 型のバインドでエラーにならないよう自動的に float へ変換するアダプタを登録
 sqlite3.register_adapter(Decimal, float)
+
+
+def clean_datetime_series(series: pd.Series) -> pd.Series:
+    """タイムゾーン表記（+00:00, +09:00, Z 等）を除去し、タイムゾーンなしの naive datetime に一貫して変換する。
+    これにより、pandas の 'Mixed timezones detected' エラーおよびタイムゾーン変換による意図しない時刻ズレを防止する。
+    """
+    if series.empty:
+        return series
+    cleaned = series.astype(str).str.replace(r"(\+\d{2}:\d{2}|Z)$", "", regex=True)
+    return pd.to_datetime(cleaned, format="mixed", errors="coerce")
 
 try:
     import psycopg2
@@ -309,7 +320,7 @@ def get_games_data(year_filter=None, group_id=None):
     if df.empty:
         return df
 
-    df['date'] = pd.to_datetime(df['date'], format='mixed')
+    df['date'] = clean_datetime_series(df['date'])
     df = df.sort_values('date')
     df['match_no'] = range(1, len(df) + 1)
 
@@ -1395,7 +1406,12 @@ def pull_games_from_remote():
             if gid in local_ids:
                 continue
 
-            played_at = str(g[1])
+            raw_played_at = g[1]
+            if hasattr(raw_played_at, "strftime"):
+                played_at = raw_played_at.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                played_at = re.sub(r"(\+\d{2}:\d{2}|Z)$", "", str(raw_played_at))
+
             grp_id = g[2]
             r_snap = g[3]
             r_cfg = json.dumps(g[4], ensure_ascii=False) if isinstance(g[4], dict) else str(g[4])
@@ -1731,7 +1747,7 @@ def get_results_data(group_id=None, rule_id=None, year=None, include_guests=True
         df = _fetch_df(conn, query, tuple(params))
         if not df.empty:
             if "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                df["date"] = clean_datetime_series(df["date"])
             if "pt" in df.columns:
                 df["pt"] = pd.to_numeric(df["pt"], errors="coerce").fillna(0.0).astype(float)
         return df

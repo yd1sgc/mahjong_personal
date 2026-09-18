@@ -284,7 +284,7 @@ def show_stats():
     df_unsynced = db.get_local_unsynced_games()
     if not df_unsynced.empty:
         st.warning(f"未同期のデータが {len(df_unsynced)} 件あります（データ管理 → 同期タブから送信できます）")
-        df_unsynced['date'] = pd.to_datetime(df_unsynced['date'], format='mixed', errors='coerce')
+        df_unsynced['date'] = db.clean_datetime_series(df_unsynced['date'])
         unsync_rows = []
         for _, row in df_unsynced.iterrows():
             players = sorted(
