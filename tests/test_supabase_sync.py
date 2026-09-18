@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 from contextlib import contextmanager
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 import database2 as db
 
@@ -106,12 +107,12 @@ def test_full_pull_restores_games():
     mock_remote_cursor.fetchall.side_effect = [
         # 1. games 一覧
         [(remote_gid, "2026-09-07 12:00:00", "all", "Mリーグ", "{}", "detail")],
-        # 2. participants
+        # 2. participants (PostgreSQL から Decimal 型で返される実態を再現)
         [
-            (1, "m1", "プレイヤーA", 35000, 1, 55.0, 1),
-            (2, "m2", "プレイヤーB", 25000, 2, 5.0, 1),
-            (3, "m3", "プレイヤーC", 22000, 3, -18.0, 1),
-            (4, "m4", "プレイヤーD", 18000, 4, -42.0, 1),
+            (1, "m1", "プレイヤーA", 35000, 1, Decimal("55.0"), 1),
+            (2, "m2", "プレイヤーB", 25000, 2, Decimal("5.0"), 1),
+            (3, "m3", "プレイヤーC", 22000, 3, Decimal("-18.0"), 1),
+            (4, "m4", "プレイヤーD", 18000, 4, Decimal("-42.0"), 1),
         ],
         # 3. rounds
         [],
@@ -138,6 +139,8 @@ def test_full_pull_restores_games():
             assert c.fetchone()[0] == 1
             c.execute("SELECT COUNT(*) FROM game_participants WHERE game_id = ?", (remote_gid,))
             assert c.fetchone()[0] == 4
+            c.execute("SELECT point FROM game_participants WHERE game_id = ? AND seat = 1", (remote_gid,))
+            assert c.fetchone()[0] == 55.0
             c.execute("SELECT yakuman_name FROM yakuman_records WHERE game_id = ?", (remote_gid,))
             row = c.fetchone()
             assert row is not None and row[0] == "国士無双"

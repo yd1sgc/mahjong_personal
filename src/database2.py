@@ -8,6 +8,9 @@ import pandas as pd
 from contextlib import contextmanager
 from datetime import datetime
 
+# SQLite が Decimal 型のバインドでエラーにならないよう自動的に float へ変換するアダプタを登録
+sqlite3.register_adapter(Decimal, float)
+
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -1426,7 +1429,7 @@ def pull_games_from_remote():
                         game_id, seat, member_id, player_name_snapshot,
                         final_score, rank, point, was_group_member
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (gid, p[0], str(p[1]), p[2], p[3], p[4], p[5], p[6]))
+                """, (gid, int(p[0]), str(p[1]), str(p[2]), int(p[3]), int(p[4]), float(p[5]), int(p[6])))
 
             for r in rounds:
                 rid = str(r[0])
