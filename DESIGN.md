@@ -144,6 +144,18 @@
 | 各種フラグ | INTEGER | `is_winner`, `is_loser`, `is_riichi`, `is_furo`, `is_tenpai` |
 | 複合主キー | - | `(round_id, seat)` |
 
+### 3.9 `yakuman_records`（役満記録）
+対局および局における役満和了の実績記録。
+
+| カラム名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `id` | TEXT (UUID v7) | 主キー |
+| `game_id` | TEXT (UUID) | 外部キー（games） |
+| `round_id` | TEXT (UUID) | 外部キー（rounds, 任意） |
+| `member_id` | TEXT (UUID) | 外部キー（members） |
+| `yakuman_name` | TEXT | 役満名称（大三元、四暗刻等） |
+| `created_at` | TIMESTAMP | 登録日時 |
+
 ---
 
 ## 4. 実装・移行の完了実績

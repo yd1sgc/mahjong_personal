@@ -1453,6 +1453,19 @@ def pull_games_from_remote():
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (rid, s[0], str(s[1]), s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
 
+            # yakuman_records 取得・保存
+            rc.execute("""
+                SELECT id, round_id, member_id, yakuman_name, created_at
+                FROM yakuman_records WHERE game_id = %s
+            """, (gid,))
+            for y in rc.fetchall():
+                lc.execute("""
+                    INSERT INTO yakuman_records (
+                        id, game_id, round_id, member_id, yakuman_name, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (id) DO NOTHING
+                """, (str(y[0]), gid, str(y[1]) if y[1] else None, str(y[2]), y[3], str(y[4]) if y[4] else None))
+
             pulled_count += 1
 
     return pulled_count
@@ -1480,6 +1493,7 @@ def push_games_to_remote(game_ids=None):
 
         for gid in target_gids:
             # 既存レコードがリモートにある場合（ローカル修正の再Push）に備え、リモート側の子レコードを一旦削除
+            rc.execute("DELETE FROM yakuman_records WHERE game_id = %s", (gid,))
             rc.execute("SELECT round_id FROM rounds WHERE game_id = %s", (gid,))
             remote_rids = [r[0] for r in rc.fetchall()]
             for rid in remote_rids:
@@ -1548,6 +1562,19 @@ def push_games_to_remote(game_ids=None):
                             han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (rid, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
+
+            # 5. yakuman_records 取得・送信
+            lc.execute("""
+                SELECT id, round_id, member_id, yakuman_name, created_at
+                FROM yakuman_records WHERE game_id = ?
+            """, (gid,))
+            for y in lc.fetchall():
+                rc.execute("""
+                    INSERT INTO yakuman_records (
+                        id, game_id, round_id, member_id, yakuman_name, created_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (y[0], gid, y[1], y[2], y[3], y[4]))
 
             # ローカル側を同期済みに更新
             lc.execute("UPDATE games SET is_synced = 1 WHERE game_id = ?", (gid,))

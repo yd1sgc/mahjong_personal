@@ -196,13 +196,26 @@ CREATE TABLE IF NOT EXISTS drafts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 6. パフォーマンスインデックス
+-- 6. 役満記録テーブル
+CREATE TABLE IF NOT EXISTS yakuman_records (
+    id TEXT PRIMARY KEY,
+    game_id TEXT NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    round_id TEXT REFERENCES rounds(round_id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL REFERENCES members(member_id) ON DELETE CASCADE,
+    yakuman_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 7. パフォーマンスインデックス
 CREATE INDEX IF NOT EXISTS idx_games_played_at ON games(played_at DESC);
 CREATE INDEX IF NOT EXISTS idx_games_group ON games(group_id);
 CREATE INDEX IF NOT EXISTS idx_game_participants_member ON game_participants(member_id);
 CREATE INDEX IF NOT EXISTS idx_game_participants_rank ON game_participants(rank);
 CREATE INDEX IF NOT EXISTS idx_rounds_game_id ON rounds(game_id, round_index);
 CREATE INDEX IF NOT EXISTS idx_round_seats_member ON round_seats(member_id);
+CREATE INDEX IF NOT EXISTS idx_yakuman_game_id ON yakuman_records(game_id);
+CREATE INDEX IF NOT EXISTS idx_yakuman_round_id ON yakuman_records(round_id);
+CREATE INDEX IF NOT EXISTS idx_yakuman_member_id ON yakuman_records(member_id);
 
 -- 7. 公式ルールプリセットのシード投入
 INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
