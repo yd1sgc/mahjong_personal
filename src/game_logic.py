@@ -94,6 +94,7 @@ class GameState:
             dealer = self.players[self.round_idx % 4]
             wind = ["東", "南", "西"][min(self.round_idx // 4, 2)]
             r["kyoku_name"] = f"{wind}{(self.round_idx % 4) + 1}局"
+            r["dealer"] = dealer
 
             # 局開始時の供託本数と本場数を記録
             r["starting_riichi_sticks"] = self.riichi_stick
@@ -462,7 +463,7 @@ def reset_game():
 
 def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_config,
                            player_member_ids=None, player_was_group_member=None,
-                           date_str=None, game_id=None):
+                           date_str=None, game_id=None, yakuman_list=None):
     """GameState および対局確定情報から、新DB構造用の不可分保存ペイロードを構築する。"""
     from calc import calc_point
     from datetime import datetime
@@ -492,9 +493,23 @@ def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_c
     riichi_pt = detail_cfg.get("riichi_pt", 1000)
 
     rounds_payload = []
+    yakuman_records_payload = []
+
+    # 既存の役満リストが引数で渡された場合
+    if yakuman_list:
+        for y in yakuman_list:
+            yakuman_records_payload.append({
+                "id": y.get("id") or db.generate_uuid7(),
+                "game_id": gid,
+                "round_id": y.get("round_id"),
+                "member_id": y.get("member_id"),
+                "yakuman_name": y.get("yakuman_name"),
+                "created_at": y.get("created_at")
+            })
+
     if game_state and hasattr(game_state, "round_history"):
         for idx, r in enumerate(game_state.round_history):
-            rid = db.generate_uuid7()
+            rid = r.get("round_id") or db.generate_uuid7()
             k_name = r.get("kyoku_name", f"東{idx+1}局")
             w_type = r.get("win_type", "ron")
             winner = r.get("winner", "")
@@ -505,6 +520,7 @@ def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_c
             furo_list = r.get("furo", [])
             tenpai_list = r.get("tenpai", [])
             multi_wins = r.get("multi_wins", [])
+            dealer_p = r.get("dealer") or players[idx % 4]
 
             seats_payload = []
             for seat_idx, p in enumerate(players, start=1):
@@ -536,7 +552,6 @@ def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_c
                         honba_p = honba * honba_pt
                         kyotaku_p += (r.get("starting_riichi_sticks", 0) + len(riichi_list)) * riichi_pt
                     else:
-                        dealer_p = players[idx % 4]
                         honba_each = honba * (honba_pt // 3)
                         if winner == dealer_p:
                             base_p = -(score // 3)
@@ -601,6 +616,18 @@ def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_c
                 "seats": seats_payload
             })
 
+            # 各ラウンドに紐づく役満情報があれば抽出
+            for y_name in r.get("yakuman_names", []):
+                y_mid = (player_member_ids or {}).get(winner) or winner
+                yakuman_records_payload.append({
+                    "id": db.generate_uuid7(),
+                    "game_id": gid,
+                    "round_id": rid,
+                    "member_id": y_mid,
+                    "yakuman_name": y_name,
+                    "created_at": None
+                })
+
     return {
         "game_id": gid,
         "played_at": played_at,
@@ -609,6 +636,7 @@ def build_v2_game_payload(game_state, players, scores, group_id, rule_id, rule_c
         "rule_config_snapshot": rule_config or {},
         "game_mode": "detail" if rounds_payload else "simple",
         "participants": participants,
-        "rounds": rounds_payload
+        "rounds": rounds_payload,
+        "yakuman_records": yakuman_records_payload
     }
 

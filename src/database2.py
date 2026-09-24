@@ -4,6 +4,9 @@ import re
 import shutil
 import sqlite3
 import time
+import urllib.request
+import urllib.parse
+import urllib.error
 from decimal import Decimal
 import pandas as pd
 from contextlib import contextmanager
@@ -33,13 +36,123 @@ except ImportError:
 IS_LOCAL = False
 SQLITE_PATH = None
 REMOTE_DB_KWARGS = None
+SUPABASE_URL = None
+SUPABASE_KEY = None
 
 
-def init_config(is_local=False, sqlite_path=None, remote_db_kwargs=None):
-    global IS_LOCAL, SQLITE_PATH, REMOTE_DB_KWARGS
+def _resolve_supabase_config():
+    """Supabase REST API 用の URL と Anon Key を解決して取得する。"""
+    global SUPABASE_URL, SUPABASE_KEY
+    if SUPABASE_URL and SUPABASE_KEY:
+        return SUPABASE_URL, SUPABASE_KEY
+
+    url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+    if not (url and key):
+        try:
+            import streamlit as st
+            sb_sec = st.secrets.get("supabase", {})
+            url = url or sb_sec.get("url")
+            key = key or sb_sec.get("key")
+        except Exception:
+            pass
+
+    if not (url and key):
+        cur_dir = os.path.dirname(os.path.abspath(__file__))
+        env_paths = [
+            os.path.join(cur_dir, "..", "..", "mahjong_app", ".env.local"),
+            os.path.join(cur_dir, "..", ".env.local"),
+            os.path.join(cur_dir, ".env.local"),
+        ]
+        for ep in env_paths:
+            if os.path.exists(ep):
+                try:
+                    with open(ep, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                k, v = line.split("=", 1)
+                                k, v = k.strip(), v.strip()
+                                if k == "NEXT_PUBLIC_SUPABASE_URL":
+                                    url = url or v
+                                elif k == "NEXT_PUBLIC_SUPABASE_ANON_KEY":
+                                    key = key or v
+                except Exception:
+                    pass
+                if url and key:
+                    break
+
+    SUPABASE_URL = (url or "").rstrip("/")
+    SUPABASE_KEY = key or ""
+    return SUPABASE_URL, SUPABASE_KEY
+
+
+def _sb_request(endpoint: str, method: str = "GET", payload=None, params: dict = None, extra_headers: dict = None):
+    """Supabase REST API (HTTPS / 443ポート) に対して同期HTTPリクエストを発行する。"""
+    url, key = _resolve_supabase_config()
+    if not url or not key:
+        raise RuntimeError("Supabase REST API の接続設定（URL, KEY）が未初期化です")
+
+    full_url = f"{url}/rest/v1/{endpoint}"
+    if params:
+        query_str = urllib.parse.urlencode(params)
+        full_url += f"?{query_str}" if "?" not in full_url else f"&{query_str}"
+
+    req_headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    if extra_headers:
+        req_headers.update(extra_headers)
+
+    data_bytes = None
+    if payload is not None:
+        data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    req = urllib.request.Request(full_url, data=data_bytes, headers=req_headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8")
+            if not body:
+                return None
+            return json.loads(body)
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8")
+        raise RuntimeError(f"Supabase REST API エラー (HTTP {e.code}): {err_msg}")
+    except Exception as e:
+        raise RuntimeError(f"Supabase REST API 通信エラー: {e}")
+
+
+def _sb_fetch_all(table_name: str, select: str = "*", order: str = None) -> list:
+    """PostgREST の1,000件上限を安全に突破する自動ページネーション取得ヘルパー。"""
+    page_size = 1000
+    offset = 0
+    all_rows = []
+    while True:
+        endpoint = f"{table_name}?select={select}&limit={page_size}&offset={offset}"
+        if order:
+            endpoint += f"&order={order}"
+        rows = _sb_request(endpoint, method="GET")
+        if not rows:
+            break
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
+def init_config(is_local=False, sqlite_path=None, remote_db_kwargs=None, supabase_config=None):
+    global IS_LOCAL, SQLITE_PATH, REMOTE_DB_KWARGS, SUPABASE_URL, SUPABASE_KEY
     IS_LOCAL = is_local
     SQLITE_PATH = sqlite_path
     REMOTE_DB_KWARGS = remote_db_kwargs
+    if supabase_config:
+        SUPABASE_URL = (supabase_config.get("url") or "").rstrip("/")
+        SUPABASE_KEY = supabase_config.get("key") or ""
 
 
 def generate_uuid7() -> str:
@@ -247,6 +360,18 @@ def save_game_record(game_data: dict, participants: list = None, rounds: list = 
                         int(s.get("is_tenpai", 0))
                     ))
 
+        # 4. yakuman_records テーブルへの INSERT
+        for y in game_data.get("yakuman_records", []):
+            y_id = y.get("id") or generate_uuid7()
+            c.execute(f"""
+                INSERT INTO yakuman_records (
+                    id, game_id, round_id, member_id, yakuman_name, created_at
+                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                ON CONFLICT (id) DO NOTHING
+            """, (
+                y_id, game_id, y.get("round_id"), str(y.get("member_id")),
+                str(y.get("yakuman_name")), y.get("created_at")
+            ))
 
     return game_id
 
@@ -366,6 +491,11 @@ def get_game_details(game_id: str) -> dict:
             r["seats"] = [dict(s) for s in c.fetchall()]
 
         game_dict["rounds"] = rounds
+
+        # 4. yakuman_records
+        c.execute(f"SELECT * FROM yakuman_records WHERE game_id = {ph}", (game_id,))
+        game_dict["yakuman_records"] = [dict(y) for y in c.fetchall()]
+
         return game_dict
 
 
@@ -432,6 +562,9 @@ def update_game_record_atomic(game_id: str, payload: dict) -> None:
 
     with _db() as conn:
         c = conn.cursor()
+
+        # 0. 既存 yakuman_records 削除
+        c.execute(f"DELETE FROM yakuman_records WHERE game_id = {ph}", (str(game_id),))
 
         # 1. 既存 rounds に紐づく round_seats を削除
         c.execute(f"SELECT round_id FROM rounds WHERE game_id = {ph}", (str(game_id),))
@@ -501,10 +634,23 @@ def update_game_record_atomic(game_id: str, payload: dict) -> None:
                     int(s.get("is_tenpai", 0))
                 ))
 
-        # 6. games テーブルの同期フラグを更新（ローカル修正時は未同期へ戻す）
+        # 6. 新しい yakuman_records 挿入
+        for y in payload.get("yakuman_records", []):
+            y_id = y.get("id") or generate_uuid7()
+            c.execute(f"""
+                INSERT INTO yakuman_records (
+                    id, game_id, round_id, member_id, yakuman_name, created_at
+                ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                ON CONFLICT (id) DO NOTHING
+            """, (
+                y_id, str(game_id), y.get("round_id"), str(y.get("member_id")),
+                str(y.get("yakuman_name")), y.get("created_at")
+            ))
+
+        # 7. games テーブルの同期フラグを更新（ローカル修正時は未同期へ戻す）
         c.execute(f"UPDATE games SET is_synced = {ph} WHERE game_id = {ph}", (0 if IS_LOCAL else 1, str(game_id)))
 
-        # 7. 事後検査: 参加者4件の存在確認
+        # 8. 事後検査: 参加者4件の存在確認
         c.execute(f"SELECT COUNT(*) FROM game_participants WHERE game_id = {ph}", (str(game_id),))
         if c.fetchone()[0] != 4:
             raise RuntimeError("参加者データの更新件数が4件になりませんでした。ロールバックします。")
@@ -976,15 +1122,24 @@ def delete_draft(draft_id="current_game"):
 # ==============================================================================
 
 def check_connectivity() -> bool:
-    """リモートDB（Supabase）への通信可否を確認し、接続可能なら True、不可なら False を返す。"""
-    if psycopg2 is None or not REMOTE_DB_KWARGS:
-        return False
+    """Supabaseへの通信可否を確認し、接続可能なら True、不可なら False を返す。
+    REST API（HTTPS / 443ポート）を最優先で確認し、学内Wi-Fiや外出先でも即座に判定する。
+    """
     try:
-        conn = get_connection()
-        conn.close()
-        return True
+        res = _sb_request("rule_templates?select=rule_id&limit=1", method="GET")
+        if res is not None:
+            return True
     except Exception:
-        return False
+        pass
+
+    if psycopg2 is not None and REMOTE_DB_KWARGS:
+        try:
+            conn = get_connection()
+            conn.close()
+            return True
+        except Exception:
+            pass
+    return False
 
 
 def init_db():
@@ -1288,50 +1443,36 @@ def mark_as_synced(game_id=None):
 
 
 def sync_masters():
-    """マスタデータ（members, groups, memberships, rule_templates）の双方向マージを行う。"""
+    """マスタデータ（members, groups, memberships, rule_templates）の双方向マージを REST API 経由で行う。"""
     if not IS_LOCAL:
         return {"members": 0, "groups": 0, "rules": 0}
 
-    with _local_db() as l_conn, _remote_db() as r_conn:
-        lc = l_conn.cursor()
-        rc = r_conn.cursor()
-
-        # 1. members マージ
-        lc.execute("SELECT member_id, member_name, is_guest, is_archived, created_at FROM members")
-        l_mems = lc.fetchall()
-        for m in l_mems:
-            rc.execute("""
-                INSERT INTO members (member_id, member_name, is_guest, is_archived, created_at)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (member_id) DO UPDATE SET
-                    member_name = EXCLUDED.member_name,
-                    is_archived = EXCLUDED.is_archived
-            """, m)
-
-        rc.execute("SELECT member_id, member_name, is_guest, is_archived, created_at FROM members")
-        for m in rc.fetchall():
+    # 1. members マージ
+    r_mems = _sb_fetch_all("members", select="member_id,member_name,is_guest,is_archived,created_at")
+    with _local_db() as conn:
+        lc = conn.cursor()
+        for m in r_mems:
             lc.execute("""
                 INSERT INTO members (member_id, member_name, is_guest, is_archived, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (member_id) DO UPDATE SET
                     member_name = excluded.member_name,
                     is_archived = excluded.is_archived
-            """, m)
+            """, (m["member_id"], m["member_name"], int(m.get("is_guest", 0)), int(m.get("is_archived", 0)), str(m.get("created_at", ""))))
 
-        # 2. groups マージ
-        lc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
-        for g in lc.fetchall():
-            rc.execute("""
-                INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (group_id) DO UPDATE SET
-                    group_name = EXCLUDED.group_name,
-                    default_rule_id = EXCLUDED.default_rule_id,
-                    is_archived = EXCLUDED.is_archived
-            """, g)
+        lc.execute("SELECT member_id, member_name, is_guest, is_archived, created_at FROM members")
+        l_mems = [
+            {"member_id": r[0], "member_name": r[1], "is_guest": r[2], "is_archived": r[3], "created_at": str(r[4])}
+            for r in lc.fetchall()
+        ]
+    if l_mems:
+        _sb_request("members", method="POST", payload=l_mems, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
-        rc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
-        for g in rc.fetchall():
+    # 2. groups マージ
+    r_groups = _sb_fetch_all("groups", select="group_id,display_id,group_name,default_rule_id,is_archived")
+    with _local_db() as conn:
+        lc = conn.cursor()
+        for g in r_groups:
             lc.execute("""
                 INSERT INTO groups (group_id, display_id, group_name, default_rule_id, is_archived)
                 VALUES (?, ?, ?, ?, ?)
@@ -1339,154 +1480,200 @@ def sync_masters():
                     group_name = excluded.group_name,
                     default_rule_id = excluded.default_rule_id,
                     is_archived = excluded.is_archived
-            """, g)
+            """, (g["group_id"], g["display_id"], g["group_name"], g.get("default_rule_id", "preset_m_league"), int(g.get("is_archived", 0))))
 
-        # 3. group_memberships マージ
-        lc.execute("SELECT group_id, member_id, joined_at FROM group_memberships")
-        for gm in lc.fetchall():
-            rc.execute("""
-                INSERT INTO group_memberships (group_id, member_id, joined_at)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (group_id, member_id) DO NOTHING
-            """, gm)
+        lc.execute("SELECT group_id, display_id, group_name, default_rule_id, is_archived FROM groups")
+        l_groups = [
+            {"group_id": r[0], "display_id": r[1], "group_name": r[2], "default_rule_id": r[3], "is_archived": r[4]}
+            for r in lc.fetchall()
+        ]
+    if l_groups:
+        _sb_request("groups", method="POST", payload=l_groups, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
-        rc.execute("SELECT group_id, member_id, joined_at FROM group_memberships")
-        for gm in rc.fetchall():
+    # 3. group_memberships マージ
+    r_gms = _sb_fetch_all("group_memberships", select="group_id,member_id,joined_at")
+    with _local_db() as conn:
+        lc = conn.cursor()
+        for gm in r_gms:
             lc.execute("""
                 INSERT INTO group_memberships (group_id, member_id, joined_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT (group_id, member_id) DO NOTHING
-            """, gm)
+            """, (gm["group_id"], gm["member_id"], str(gm.get("joined_at", ""))))
 
-        # 4. rule_templates マージ
-        lc.execute("SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates")
-        for r in lc.fetchall():
-            cfg_val = r[4] if isinstance(r[4], str) else json.dumps(r[4], ensure_ascii=False)
-            rc.execute("""
-                INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (rule_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    config_json = EXCLUDED.config_json,
-                    is_archived = EXCLUDED.is_archived
-            """, (r[0], r[1], r[2], r[3], cfg_val, r[5]))
+        lc.execute("SELECT group_id, member_id, joined_at FROM group_memberships")
+        l_gms = [
+            {"group_id": r[0], "member_id": r[1], "joined_at": str(r[2])}
+            for r in lc.fetchall()
+        ]
+    if l_gms:
+        _sb_request("group_memberships", method="POST", payload=l_gms, extra_headers={"Prefer": "resolution=ignore-duplicates"})
 
-        rc.execute("SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates")
-        for r in rc.fetchall():
-            cfg_val = json.dumps(r[4], ensure_ascii=False) if isinstance(r[4], dict) else str(r[4])
+    # 4. rule_templates マージ
+    r_rules = _sb_fetch_all("rule_templates", select="rule_id,name,kind,version,config_json,is_archived")
+    with _local_db() as conn:
+        lc = conn.cursor()
+        for r in r_rules:
+            cfg_str = json.dumps(r["config_json"], ensure_ascii=False) if isinstance(r["config_json"], dict) else str(r["config_json"])
             lc.execute("""
                 INSERT INTO rule_templates (rule_id, name, kind, version, config_json, is_archived)
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (rule_id) DO UPDATE SET
                     name = excluded.name,
+                    kind = excluded.kind,
+                    version = excluded.version,
                     config_json = excluded.config_json,
                     is_archived = excluded.is_archived
-            """, (r[0], r[1], r[2], r[3], cfg_val, r[5]))
+            """, (r["rule_id"], r["name"], r.get("kind", "official"), int(r.get("version", 1)), cfg_str, int(r.get("is_archived", 0))))
 
-        r_conn.commit()
+        lc.execute("SELECT rule_id, name, kind, version, config_json, is_archived FROM rule_templates")
+        l_rules = []
+        for row in lc.fetchall():
+            try:
+                c_json = json.loads(row[4]) if isinstance(row[4], str) else row[4]
+            except Exception:
+                c_json = {}
+            l_rules.append({
+                "rule_id": row[0], "name": row[1], "kind": row[2], "version": row[3],
+                "config_json": c_json, "is_archived": row[5]
+            })
+    if l_rules:
+        _sb_request("rule_templates", method="POST", payload=l_rules, extra_headers={"Prefer": "resolution=merge-duplicates"})
+
+    return {"members": len(r_mems), "groups": len(r_groups), "rules": len(r_rules)}
 
 
 def pull_games_from_remote():
-    """リモートにあってローカルに存在しない対局を全件取得してローカルへ保存する（バックアップ復元）。"""
+    """リモート（Supabase）の対局データを全件取得し、ローカルSQLiteへ完全同期・洗替する。
+    ※ローカル限定対局（sync_target = 0）は維持される。
+    """
     if not IS_LOCAL:
         return 0
 
+    remote_games = _sb_fetch_all("games")
+    if not remote_games:
+        return 0
+
+    remote_parts = _sb_fetch_all("game_participants")
+    remote_rounds = _sb_fetch_all("rounds", order="round_index.asc")
+    remote_seats = _sb_fetch_all("round_seats", order="seat.asc")
+    remote_yakuman = _sb_fetch_all("yakuman_records")
+
+    parts_by_game = {}
+    for p in remote_parts:
+        parts_by_game.setdefault(str(p["game_id"]), []).append(p)
+
+    rounds_by_game = {}
+    for r in remote_rounds:
+        rounds_by_game.setdefault(str(r["game_id"]), []).append(r)
+
+    seats_by_round = {}
+    for s in remote_seats:
+        seats_by_round.setdefault(str(s["round_id"]), []).append(s)
+
+    yakuman_by_game = {}
+    for y in remote_yakuman:
+        yakuman_by_game.setdefault(str(y["game_id"]), []).append(y)
+
     pulled_count = 0
-    with _local_db() as l_conn, _remote_db() as r_conn:
-        lc = l_conn.cursor()
-        rc = r_conn.cursor()
-
-        # ローカルに存在する全対局ID
-        lc.execute("SELECT game_id FROM games")
-        local_ids = set(r[0] for r in lc.fetchall())
-
-        # リモートの対局一覧
-        rc.execute("SELECT game_id, played_at, group_id, rule_name_snapshot, rule_config_snapshot, game_mode FROM games")
-        remote_games = rc.fetchall()
+    with _local_db() as conn:
+        lc = conn.cursor()
 
         for g in remote_games:
-            gid = str(g[0])
-            if gid in local_ids:
-                continue
+            gid = str(g["game_id"])
 
-            raw_played_at = g[1]
+            raw_played_at = g.get("played_at", "")
             if hasattr(raw_played_at, "strftime"):
                 played_at = raw_played_at.strftime("%Y-%m-%d %H:%M:%S")
             else:
                 played_at = re.sub(r"(\+\d{2}:\d{2}|Z)$", "", str(raw_played_at))
 
-            grp_id = g[2]
-            r_snap = g[3]
-            r_cfg = json.dumps(g[4], ensure_ascii=False) if isinstance(g[4], dict) else str(g[4])
-            mode = g[5]
+            grp_id = g.get("group_id")
+            r_snap = g.get("rule_name_snapshot") or "標準ルール"
+            r_cfg = g.get("rule_config_snapshot") or {}
+            cfg_str = json.dumps(r_cfg, ensure_ascii=False) if isinstance(r_cfg, dict) else str(r_cfg)
+            mode = g.get("game_mode", "detail")
 
-            # participants 取得
-            rc.execute("""
-                SELECT seat, member_id, player_name_snapshot, final_score, rank, point, was_group_member
-                FROM game_participants WHERE game_id = %s ORDER BY seat
-            """, (gid,))
-            parts = rc.fetchall()
+            # 既存のローカルレコードがある場合、子レコードを一旦クリーンアップして最新Supabaseデータで再構築
+            lc.execute("DELETE FROM yakuman_records WHERE game_id = ?", (gid,))
+            lc.execute("SELECT round_id FROM rounds WHERE game_id = ?", (gid,))
+            existing_rids = [r[0] for r in lc.fetchall()]
+            for rid in existing_rids:
+                lc.execute("DELETE FROM round_seats WHERE round_id = ?", (rid,))
+            lc.execute("DELETE FROM rounds WHERE game_id = ?", (gid,))
+            lc.execute("DELETE FROM game_participants WHERE game_id = ?", (gid,))
 
-            # rounds 取得
-            rc.execute("""
-                SELECT round_id, round_index, kyoku_name, honba, riichi_sticks, result_type
-                FROM rounds WHERE game_id = %s ORDER BY round_index
-            """, (gid,))
-            rounds = rc.fetchall()
-
-            # ローカルへ不可分保存 (sync_target=1, is_synced=1)
+            # games レコードの保存 (sync_target=1, is_synced=1)
             lc.execute("""
                 INSERT INTO games (
                     game_id, played_at, group_id, rule_name_snapshot,
                     rule_config_snapshot, game_mode, sync_target, is_synced
                 ) VALUES (?, ?, ?, ?, ?, ?, 1, 1)
-            """, (gid, played_at, grp_id, r_snap, r_cfg, mode))
+                ON CONFLICT (game_id) DO UPDATE SET
+                    played_at = excluded.played_at,
+                    group_id = excluded.group_id,
+                    rule_name_snapshot = excluded.rule_name_snapshot,
+                    rule_config_snapshot = excluded.rule_config_snapshot,
+                    game_mode = excluded.game_mode,
+                    sync_target = 1,
+                    is_synced = 1
+            """, (gid, played_at, grp_id, r_snap, cfg_str, mode))
 
-            for p in parts:
+            # participants 保存
+            for p in parts_by_game.get(gid, []):
                 lc.execute("""
                     INSERT INTO game_participants (
                         game_id, seat, member_id, player_name_snapshot,
                         final_score, rank, point, was_group_member
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (gid, int(p[0]), str(p[1]), str(p[2]), int(p[3]), int(p[4]), float(p[5]), int(p[6])))
+                """, (
+                    gid, int(p["seat"]), str(p["member_id"]), str(p.get("player_name_snapshot", "")),
+                    int(p.get("final_score", 0)), int(p.get("rank", 1)), float(p.get("point", 0.0)),
+                    int(p.get("was_group_member", 1))
+                ))
 
-            for r in rounds:
-                rid = str(r[0])
+            # rounds & round_seats 保存
+            for r in rounds_by_game.get(gid, []):
+                rid = str(r["round_id"])
                 lc.execute("""
                     INSERT INTO rounds (
                         round_id, game_id, round_index, kyoku_name,
                         honba, riichi_sticks, result_type
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (rid, gid, r[1], r[2], r[3], r[4], r[5]))
+                """, (
+                    rid, gid, int(r.get("round_index", 1)), str(r.get("kyoku_name", "")),
+                    int(r.get("honba", 0)), int(r.get("riichi_sticks", 0)), str(r.get("result_type", "ron"))
+                ))
 
-                # round_seats 取得・保存
-                rc.execute("""
-                    SELECT seat, member_id, base_point, honba_point, kyotaku_point,
-                           penalty_point, score_delta, chip_delta, han, fu,
-                           is_winner, is_loser, is_riichi, is_furo, is_tenpai
-                    FROM round_seats WHERE round_id = %s ORDER BY seat
-                """, (rid,))
-                for s in rc.fetchall():
+                for s in seats_by_round.get(rid, []):
                     lc.execute("""
                         INSERT INTO round_seats (
                             round_id, seat, member_id, base_point, honba_point,
                             kyotaku_point, penalty_point, score_delta, chip_delta,
                             han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (rid, s[0], str(s[1]), s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
+                    """, (
+                        rid, int(s["seat"]), str(s["member_id"]),
+                        int(s.get("base_point", 0)), int(s.get("honba_point", 0)),
+                        int(s.get("kyotaku_point", 0)), int(s.get("penalty_point", 0)),
+                        int(s.get("score_delta", 0)), int(s.get("chip_delta", 0)),
+                        s.get("han"), s.get("fu"),
+                        int(s.get("is_winner", 0)), int(s.get("is_loser", 0)),
+                        int(s.get("is_riichi", 0)), int(s.get("is_furo", 0)),
+                        int(s.get("is_tenpai", 0))
+                    ))
 
-            # yakuman_records 取得・保存
-            rc.execute("""
-                SELECT id, round_id, member_id, yakuman_name, created_at
-                FROM yakuman_records WHERE game_id = %s
-            """, (gid,))
-            for y in rc.fetchall():
+            # yakuman_records 保存
+            for y in yakuman_by_game.get(gid, []):
                 lc.execute("""
                     INSERT INTO yakuman_records (
                         id, game_id, round_id, member_id, yakuman_name, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT (id) DO NOTHING
-                """, (str(y[0]), gid, str(y[1]) if y[1] else None, str(y[2]), y[3], str(y[4]) if y[4] else None))
+                """, (
+                    str(y["id"]), gid, str(y["round_id"]) if y.get("round_id") else None,
+                    str(y["member_id"]), str(y.get("yakuman_name", "")), str(y.get("created_at")) if y.get("created_at") else None
+                ))
 
             pulled_count += 1
 
@@ -1494,14 +1681,13 @@ def pull_games_from_remote():
 
 
 def push_games_to_remote(game_ids=None):
-    """ローカルの sync_target = 1 かつ未同期の対局（または指定ID）のみをリモートへ送信する（選択的Push）。"""
+    """ローカルの sync_target = 1 かつ未同期の対局（または指定ID）のみを REST API 経由でリモートへ送信する（選択的Push）。"""
     if not IS_LOCAL:
         return 0
 
     pushed_count = 0
-    with _local_db() as l_conn, _remote_db() as r_conn:
+    with _local_db() as l_conn:
         lc = l_conn.cursor()
-        rc = r_conn.cursor()
 
         if game_ids:
             ph_list = ",".join("?" for _ in game_ids)
@@ -1513,106 +1699,163 @@ def push_games_to_remote(game_ids=None):
         if not target_gids:
             return 0
 
-        for gid in target_gids:
-            # 既存レコードがリモートにある場合（ローカル修正の再Push）に備え、リモート側の子レコードを一旦削除
-            rc.execute("DELETE FROM yakuman_records WHERE game_id = %s", (gid,))
-            rc.execute("SELECT round_id FROM rounds WHERE game_id = %s", (gid,))
-            remote_rids = [r[0] for r in rc.fetchall()]
-            for rid in remote_rids:
-                rc.execute("DELETE FROM round_seats WHERE round_id = %s", (rid,))
-            rc.execute("DELETE FROM rounds WHERE game_id = %s", (gid,))
-            rc.execute("DELETE FROM game_participants WHERE game_id = %s", (gid,))
+        # 送信前にローカルDBスナップショットを退避
+        backup_local_db_snapshot()
 
-            # 1. games レコード取得・送信
+        for gid in target_gids:
+            # 安全性インターロック: 送信前整合性検証
+            # A. 参加者4名の持ち点合計（ゼロサム検証）
+            lc.execute("SELECT final_score FROM game_participants WHERE game_id = ? ORDER BY seat", (gid,))
+            scores = [r[0] for r in lc.fetchall()]
+            if len(scores) != 4:
+                raise ValueError(f"対局 {gid} の参加者数が4名ではありません (現在: {len(scores)}名)。Pushを中断します。")
+
             lc.execute("SELECT game_id, played_at, group_id, rule_name_snapshot, rule_config_snapshot, game_mode FROM games WHERE game_id = ?", (gid,))
             g = lc.fetchone()
-            cfg_val = g[4] if isinstance(g[4], str) else json.dumps(g[4], ensure_ascii=False)
+            cfg_obj = json.loads(g[4]) if isinstance(g[4], str) else (g[4] or {})
+            init_score = cfg_obj.get("basic", {}).get("init_score", 25000)
+            expected_total = init_score * 4
+            if sum(scores) != expected_total:
+                raise ValueError(f"対局 {gid} の持ち点合計 ({sum(scores):,}点) が規定値 ({expected_total:,}点) と一致しません。Pushを中断します。")
 
-            rc.execute("""
-                INSERT INTO games (
-                    game_id, played_at, group_id, rule_name_snapshot,
-                    rule_config_snapshot, game_mode, is_synced
-                ) VALUES (%s, %s, %s, %s, %s, %s, 1)
-                ON CONFLICT (game_id) DO UPDATE SET
-                    played_at = EXCLUDED.played_at,
-                    group_id = EXCLUDED.group_id,
-                    rule_name_snapshot = EXCLUDED.rule_name_snapshot,
-                    rule_config_snapshot = EXCLUDED.rule_config_snapshot,
-                    game_mode = EXCLUDED.game_mode,
-                    is_synced = 1
-            """, (g[0], g[1], g[2], g[3], cfg_val, g[5]))
+            # B. 全局・全座席の恒等式検証 (base + honba + kyotaku + penalty == score_delta)
+            lc.execute("""
+                SELECT rs.round_id, rs.seat, rs.base_point, rs.honba_point, rs.kyotaku_point, rs.penalty_point, rs.score_delta
+                FROM round_seats rs
+                JOIN rounds r ON rs.round_id = r.round_id
+                WHERE r.game_id = ?
+            """, (gid,))
+            seat_rows = lc.fetchall()
+            for s in seat_rows:
+                calc_delta = (s[2] or 0) + (s[3] or 0) + (s[4] or 0) + (s[5] or 0)
+                if calc_delta != s[6]:
+                    raise ValueError(
+                        f"対局 {gid} の座席恒等式が破綻しています (round_id: {s[0]}, seat: {s[1]}, "
+                        f"base={s[2]}, honba={s[3]}, kyotaku={s[4]}, penalty={s[5]}, sum={calc_delta}, recorded_delta={s[6]})。"
+                        "Pushを中断します。"
+                    )
+
+            # 1. games レコード送信
+
+            game_payload = {
+                "game_id": g[0],
+                "played_at": str(g[1]),
+                "group_id": g[2],
+                "rule_name_snapshot": g[3],
+                "rule_config_snapshot": cfg_obj,
+                "game_mode": g[5],
+                "status": "finished",
+                "sync_target": 1,
+                "is_synced": 1
+            }
+            _sb_request("games", method="POST", payload=game_payload, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
             # 2. participants 取得・送信
             lc.execute("""
                 SELECT seat, member_id, player_name_snapshot, final_score, rank, point, was_group_member
                 FROM game_participants WHERE game_id = ? ORDER BY seat
             """, (gid,))
-            for p in lc.fetchall():
-                rc.execute("""
-                    INSERT INTO game_participants (
-                        game_id, seat, member_id, player_name_snapshot,
-                        final_score, rank, point, was_group_member
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (gid, p[0], p[1], p[2], p[3], p[4], p[5], p[6]))
+            parts_payload = [
+                {
+                    "game_id": gid,
+                    "seat": p[0],
+                    "member_id": p[1],
+                    "player_name_snapshot": p[2],
+                    "final_score": p[3],
+                    "rank": p[4],
+                    "point": float(p[5]),
+                    "was_group_member": p[6]
+                }
+                for p in lc.fetchall()
+            ]
+            if parts_payload:
+                _sb_request("game_participants", method="POST", payload=parts_payload, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
             # 3. rounds 取得・送信
             lc.execute("""
                 SELECT round_id, round_index, kyoku_name, honba, riichi_sticks, result_type
                 FROM rounds WHERE game_id = ? ORDER BY round_index
             """, (gid,))
-            for r in lc.fetchall():
-                rid = r[0]
-                rc.execute("""
-                    INSERT INTO rounds (
-                        round_id, game_id, round_index, kyoku_name,
-                        honba, riichi_sticks, result_type
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (rid, gid, r[1], r[2], r[3], r[4], r[5]))
+            rounds_payload = [
+                {
+                    "round_id": r[0],
+                    "game_id": gid,
+                    "round_index": r[1],
+                    "kyoku_name": r[2],
+                    "honba": r[3],
+                    "riichi_sticks": r[4],
+                    "result_type": r[5]
+                }
+                for r in lc.fetchall()
+            ]
+            if rounds_payload:
+                _sb_request("rounds", method="POST", payload=rounds_payload, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
-                # 4. round_seats 取得・送信
-                lc.execute("""
-                    SELECT seat, member_id, base_point, honba_point, kyotaku_point,
-                           penalty_point, score_delta, chip_delta, han, fu,
-                           is_winner, is_loser, is_riichi, is_furo, is_tenpai
-                    FROM round_seats WHERE round_id = ? ORDER BY seat
-                """, (rid,))
-                for s in lc.fetchall():
-                    rc.execute("""
-                        INSERT INTO round_seats (
-                            round_id, seat, member_id, base_point, honba_point,
-                            kyotaku_point, penalty_point, score_delta, chip_delta,
-                            han, fu, is_winner, is_loser, is_riichi, is_furo, is_tenpai
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (rid, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13], s[14]))
+            # 4. round_seats 取得・送信
+            lc.execute("""
+                SELECT rs.round_id, rs.seat, rs.member_id, rs.base_point, rs.honba_point,
+                       rs.kyotaku_point, rs.penalty_point, rs.score_delta, rs.chip_delta,
+                       rs.han, rs.fu, rs.is_winner, rs.is_loser, rs.is_riichi, rs.is_furo, rs.is_tenpai
+                FROM round_seats rs
+                JOIN rounds r ON rs.round_id = r.round_id
+                WHERE r.game_id = ? ORDER BY r.round_index, rs.seat
+            """, (gid,))
+            seats_payload = [
+                {
+                    "round_id": s[0],
+                    "seat": s[1],
+                    "member_id": s[2],
+                    "base_point": s[3],
+                    "honba_point": s[4],
+                    "kyotaku_point": s[5],
+                    "penalty_point": s[6],
+                    "score_delta": s[7],
+                    "chip_delta": s[8],
+                    "han": s[9],
+                    "fu": s[10],
+                    "is_winner": s[11],
+                    "is_loser": s[12],
+                    "is_riichi": s[13],
+                    "is_furo": s[14],
+                    "is_tenpai": s[15]
+                }
+                for s in lc.fetchall()
+            ]
+            if seats_payload:
+                _sb_request("round_seats", method="POST", payload=seats_payload, extra_headers={"Prefer": "resolution=merge-duplicates"})
 
             # 5. yakuman_records 取得・送信
             lc.execute("""
                 SELECT id, round_id, member_id, yakuman_name, created_at
                 FROM yakuman_records WHERE game_id = ?
             """, (gid,))
-            for y in lc.fetchall():
-                rc.execute("""
-                    INSERT INTO yakuman_records (
-                        id, game_id, round_id, member_id, yakuman_name, created_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO NOTHING
-                """, (y[0], gid, y[1], y[2], y[3], y[4]))
+            yakuman_payload = [
+                {
+                    "id": y[0],
+                    "game_id": gid,
+                    "round_id": y[1],
+                    "member_id": y[2],
+                    "yakuman_name": y[3],
+                    "created_at": str(y[4]) if y[4] else None
+                }
+                for y in lc.fetchall()
+            ]
+            if yakuman_payload:
+                _sb_request("yakuman_records", method="POST", payload=yakuman_payload, extra_headers={"Prefer": "resolution=ignore-duplicates"})
 
             # ローカル側を同期済みに更新
             lc.execute("UPDATE games SET is_synced = 1 WHERE game_id = ?", (gid,))
             pushed_count += 1
-
-        r_conn.commit()
 
     return pushed_count
 
 
 def sync_all():
     """マスタ同期 → 全件Pull → 選択的Push を順次実行する統合同期関数。"""
-    sync_masters()
+    masters_res = sync_masters()
     pulled = pull_games_from_remote()
     pushed = push_games_to_remote()
-    return {"pulled": pulled, "pushed": pushed}
+    return {"pulled": pulled, "pushed": pushed, "masters": masters_res}
 
 
 def sync_to_supabase():

@@ -27,10 +27,16 @@ try:
 except KeyError:
     remote_db_kwargs = None
 
+try:
+    supabase_config = dict(st.secrets.get("supabase", {}))
+except Exception:
+    supabase_config = None
+
 db.init_config(
     is_local=is_local_mode,
     sqlite_path=local_db_path,
-    remote_db_kwargs=remote_db_kwargs
+    remote_db_kwargs=remote_db_kwargs,
+    supabase_config=supabase_config
 )
 
 st.markdown("""

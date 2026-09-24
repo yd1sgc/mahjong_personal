@@ -329,7 +329,8 @@ def show_round_edit(selected_game_id=None):
                     player_member_ids=player_member_ids,
                     player_was_group_member=player_was_group_member,
                     date_str=str(game_dict.get("played_at")),
-                    game_id=sel_id
+                    game_id=sel_id,
+                    yakuman_list=game_dict.get("yakuman_records", [])
                 )
 
                 # 不可分置換実行
